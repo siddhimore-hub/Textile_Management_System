@@ -7,6 +7,8 @@
     "db:reset": "npm --prefix backend run db:reset",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
-    "smoke": "bash scripts/smoke.sh"
+    "smoke": "bash scripts/smoke.sh",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "build": "npm --prefix frontend run build"
   }
 }

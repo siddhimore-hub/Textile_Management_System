@@ -2,35 +2,51 @@
 
 ## Done and verified
 - Skeleton, handbook, naming rules, API contract, member prompts, git-ready repo.
-- SQLite schema + seed (`db/`), auto-created on first backend start.
-- Backend (Express + zod) verified with `scripts/smoke.sh` plus manual checks: inventory (incl. suppliers, over-requirement issue guard), orders, production, qc, dispatch, workforce, finance (payments with overpay guard), SSE live events, derived order status.
-- Frontend builds cleanly. Shell: sidebar with owner tags, navbar, responsive drawer menu, Dashboard (live), Process flow.
-- Real pages now built (wired in `App.jsx` `custom` map):
-  - M1: `Orders.jsx` (new order with yarn lines, buyer link, yarn check, issue yarn) and receive-yarn form on stock page.
-  - M2: `Machines.jsx` (live board: assign job, log output, finish, change status), `Rolls.jsx` (create roll, tabs, inspect with required defect, defect report).
-  - M3: `Finished.jsx` (pick rolls of one order, vehicle number, dispatch + invoice), `Invoices.jsx` (record payment, print), `Track.jsx` public page with stage stepper.
-  - M4: `Attendance.jsx`, `Payroll.jsx` (add worker, run payroll), `Costs.jsx` (add cost, cost per metre).
-- Shared helpers: `useLive`, `useAction`, `opts` (lib/api.js), `EntryForm`, `DataTable`, `Msg`.
+- SQLite schema + seed (`db/`). `schema.sql` is all `CREATE ... IF NOT EXISTS` and runs on every start, so older databases upgrade in place (new tables, `users.password_hash`, `users.active`). Seed only runs on a fresh DB.
+- Backend (Express + zod): inventory (suppliers, over-requirement guard), orders, production, qc, dispatch, workforce, finance (overpay guard), SSE live events, derived order status.
+- Frontend pages for all modules (see `App.jsx` `custom` map): Orders, Machines, Rolls, Finished, Invoices, Track (public), Attendance, Payroll, Costs.
 
-## Not built yet (next work for the members)
-- Login and roles, role-based menu, audit log writes (M4).
-- Add material / add buyer forms in UI (endpoints exist), purchase requests table (M1).
-- Roll QR label, rework re-inspection history view, require issued yarn before a job (M2).
-- Nicer printable invoice/dispatch note layout, notifications table (M3).
-- Dashboard chart and orders-at-risk list, finance receivables per buyer (M4).
-- Offline queue (PWA) for floor entries, automated tests beyond smoke.
-- **No page has been opened in a real browser by the author.** Pages compile and their API calls were tested by curl. Run both servers, click through every page at phone and desktop width, and fix what looks wrong.
+### Added in this round (all verified by automated tests, see below)
+- **Staged production line (M2).** Jobs now move through `spinning -> weaving (Loom) -> dyeing -> finishing -> rolls`; a job consumes the completed previous-stage batch (`job_cards.source_job_id`, enforced one-to-one by a partial unique index) and can never skip a stage or take unfinished material. New pages `Spinning`, `Loom`, `Dyeing`, `Finishing` (`frontend/src/pages/Stage.jsx`, one page per stage) using the existing UI kit; `GET /jobs/available?stage=` lists only completed, unconsumed material with `produced_metres`/`available_metres`. `POST /jobs` takes `order_id` for spinning but `source_job_id` for the later stages. Rolls can only be created from a *completed* finishing batch and cannot exceed what the batch has left (400 `EXCEEDS_AVAILABLE`); new rolls still start QC `pending`. Machines page lost its direct assign form for non-spinning machines (those are assigned from their stage page) but still shows status today's metres, spinning assignment and output/finish controls. `finishing` was added to the `machines`/`job_cards` stage CHECK; existing databases upgrade in place (tables are rebuilt with records kept, a `Finish-01` machine is added if none exists). New backend test `stages.test.js` covers the whole chain plus the guards.
+- **Login, roles, audit (M4).** `lib/auth.js` (scrypt passwords, session tokens in `sessions`, ONE role-rule table), `modules/auth.js` (login/logout/me/password, owner-only users admin, audit-log read), `lib/audit.js` (every successful POST/PATCH logged with who/what/record, plus logins and failed logins). Login rate limit: 5 wrong tries / 10 min / email. Frontend: `Login.jsx`, `lib/auth.jsx` (`useAuth().can([...])`), role-filtered menu, route gate, `Users.jsx`, `AuditLog.jsx`. Seeded users all start with password `everest123` (env `DEFAULT_PASSWORD`).
+- **Add material / buyer / supplier forms (M1).** Stock page: add material form beside receive yarn. New page `Parties.jsx` ("Buyers and suppliers").
+- **Purchase requests (M1).** `modules/purchasing.js` + `PurchaseRequests.jsx`: low-stock suggestions, request -> ordered -> received (receiving books the stock in one step).
+- **Notifications (M3).** `lib/notify.js`, `modules/notifications.js`, bell in the navbar (`Bell.jsx`). Raised for: low stock, purchase request, QC rework/reject, order ready to ship, machine breakdown, invoice raised. Scoped by role; "read" is shared (one flag per alert, not per person).
+- **QR roll labels (M2).** `qrcode` npm package drawn locally (works offline). `/labels?ids=` print sheet (78mm labels, print CSS), `/scan/:code` roll page with full inspection history (this also covers the old "rework re-inspection history" item), "Find roll" box on the Rolls page for barcode-scanner/typed codes.
+- **Dashboard chart + orders at risk (M4).** SVG bar chart (`BarChart.jsx`, last 14 days), at-risk table (overdue / due within 3 days / 15+ points behind a straight-line plan / yarn short), receivables per buyer (accounts + owner).
+- **Offline queue (PWA).** `frontend/public/sw.js` + manifest cache the app and last-seen GET data; `lib/api.js` queues floor entries (output, new roll, inspection, attendance, machine status) in localStorage when the network is down and replays them in order. Every write carries an `Idempotency-Key`; the server (`lib/idempotency.js`) replays the first answer so a retry never double-posts. Banner shows offline / waiting / refused entries. Service worker is registered only in the production build.
+- **Automated tests.** `npm test` runs backend API tests (`backend/test/*.test.js`, own temp DB per file: auth, roles, audit, full flow, purchasing, dashboard, offline replay, labels) and frontend tests (`frontend/test/`: offline queue logic, and every route rendered for every role). `npm run smoke` was updated to log in.
+
+
+## UI redesign (dashboard look, applies to every page)
+- New theme in `styles.css` (royal blue + navy sidebar, pastel cards) plus `dashboard.css`. All pages restyle through the same class names; only colours/spacing changed.
+- New components: `Icon.jsx` (inline SVG icons, `PAGE_ICON` maps menu paths to icons), `Brand.jsx` (logo + sidebar art), `Search.jsx` (navbar search over pages, orders, machines, materials), `LineChart.jsx`, `DonutChart.jsx`, `DashWidgets.jsx`. Helpers in `lib/format.js`.
+- Dashboard (`Dashboard.jsx`) now: greeting + shift, 4 key cards, production chart (7/14/30 days), order status donut, upcoming orders, recent dispatches, recent updates (notifications), role-aware quick actions, process strip with live counts, then orders at risk and finance (accounts/owner). It reads existing endpoints only; no backend change.
+- `Layout.jsx`: icons in menu, search, bell with badge, account menu with Log out. The M1 to M4 owner tags and "Built by" notes are no longer shown (menu config in `lib/modules.js` is unchanged).
+- Order status pills: `in_qc` reads "quality check", `confirmed` reads "not started" (label only, data unchanged).
+
+## Not built yet
+- **No page has been opened in a real browser by the author(s).** Pages compile, render without errors for every role (server-side first paint), and their API calls are tested, but nobody has clicked through at phone and desktop width. Do this first: check the print layout of `/labels`, the bell dropdown on a phone, the offline banner (DevTools > Network > Offline), and that the service worker works from `npm run build` + a static server proxying `/api` to port 4000.
+- Role-hidden forms are done on Machines, Attendance, Finished stock, Invoices, Orders, Rolls, Stock; Payroll and Costs are accounts-only pages. Any new page should hide actions with `can([...])` from `lib/auth.jsx`.
+- Offline: only the five floor entries are queued; a roll created offline cannot be inspected until it syncs (its id is unknown). Queue lives in localStorage (fine for floor volumes, not for thousands of entries).
+- Notifications "read" is shared across everyone with the same role. Per-user read state would need a join table.
+- Nicer printable invoice/dispatch note layout, require issued yarn before a job (M2), safe payroll re-run (M4), production server config (static `dist` + `/api` proxy).
+- The stage pages reuse the existing `Machines` page to change machine status (breakdown/maintenance) and to *start* spinning; `Loom`/`Dyeing`/`Finishing` can only be started from their own pages. A job authored via `PATCH /machines/:id/status` to `running` still bypasses the stage chain (it sets machine status only, no job) - kept as-is.
+- Security notes for going live: put it behind HTTPS (tokens are bearer tokens; the live stream takes the token in the URL, so keep proxy access logs off for `/api/events`), change the seeded passwords, set `DEFAULT_PASSWORD` before first start.
 
 ## Gotchas
-- Order status is derived, not stored (`backend/src/lib/orderStatus.js`). A partly shipped order stays `in_production`.
+- Order status is derived, not stored (`backend/src/lib/orderStatus.js`). A partly shipped order stays `in_production`; an order with an unfinished job also stays `in_production` after dispatch, so finish the job.
+- Rolls now come only from completed **finishing** jobs (`POST /rolls` needs a `job_card_id` whose stage is `finishing` and status `done`, and `metres` <= the batch's remaining material). The old shortcut of rolling straight from any running job is gone.
+- `GET /jobs/available?stage=<stage>` shows material from completed jobs of `<stage>` that no later job consumed (for `finishing`, minus metres already rolled). Roll metres are the only consumption of a finishing batch.
 - Stock `reserved` = required by orders minus yarn already issued; `available` = on hand minus reserved; `low` uses available.
-- `npm run db:reset` deletes `backend/data/mill.db`; seed data comes from `db/seed.sql`.
-- Payroll: running it early in a month inserts a row per worker (unique per month), so later runs skip them. Run payroll at month end, or delete the rows first (M4 should add a safe re-run).
+- `npm run db:reset` deletes `backend/data/mill.db`; seed data comes from `db/seed.sql`. Existing databases keep their data and get new tables on next start; users that predate login get the default password.
+- Payroll: running it early in a month inserts a row per worker (unique per month), so later runs skip them. Run payroll at month end, or delete the rows first.
 - Do not `pkill -f "node src/index.js"` from a script that contains that text; use the process id.
 - Vite proxies `/api` to port 4000 in dev; there is no production server config yet.
 - Vehicle number must look like TN09AB1234 (see dispatch validation).
+- Tests: backend tests need `backend/test-support/helpers.js` (kept out of `test/` so Node does not run it as a test).
 
 ## How to continue (AI agent)
 1. Read `AGENTS.md`, `HANDBOOK.md`, `docs/api-contract.md`.
 2. Ask the human which member (M1 to M4) you are; open that prompt in `docs/prompts/`.
-3. Do the first unfinished item, verify, update this file.
+3. Do the first unfinished item, verify (`npm test`, `npm run build`, `npm run smoke`), update this file.

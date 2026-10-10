@@ -2,6 +2,7 @@
 import { useLive } from '../lib/api.js';
 import DataTable from '../components/DataTable.jsx';
 import EntryForm from '../components/EntryForm.jsx';
+import { useAuth } from '../lib/auth.jsx';
 
 function ReceiptForm({ onDone }) {
   const m = useLive('/materials'); const s = useLive('/suppliers');
@@ -11,12 +12,18 @@ function ReceiptForm({ onDone }) {
     { name: 'qty', label: 'Quantity (kg)', type: 'number' }, { name: 'lot_no', label: 'Lot number' }]} />;
 }
 
+function MaterialForm({ onDone }) {
+  return <EntryForm title="Add a new material" endpoint="/materials" submitLabel="Add material" onDone={onDone} fields={[
+    { name: 'name', label: 'Name, e.g. Cotton 30s White' }, { name: 'yarn_type', label: 'Yarn type' }, { name: 'colour', label: 'Colour' },
+    { name: 'unit', label: 'Unit', options: [{ value: 'kg', label: 'kg' }, { value: 'bale', label: 'bale' }] }, { name: 'reorder_level', label: 'Reorder at (low-stock level)', type: 'number' }]} />;
+}
+
 export default function ModulePage({ item }) {
+  const { can } = useAuth();
   const { data, error, loading, reload } = useLive(item.endpoint, item.live || []);
   return (
     <>
-      <p className="owner-note">Built by {item.owner}. {item.hint}</p>
-      {item.form === 'receipt' && <ReceiptForm onDone={reload} />}
+      {item.form === 'stock' && can(['store']) && <><ReceiptForm onDone={reload} /><MaterialForm onDone={reload} /></>}
       {error ? <div className="empty err">{error.message}</div> : loading ? <div className="empty">Loading</div>
         : <DataTable columns={item.columns} rows={data} />}
     </>

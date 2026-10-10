@@ -48,16 +48,20 @@ CREATE TABLE IF NOT EXISTS order_requirements (
 -- ===== M2 : PRODUCTION + QC =====
 CREATE TABLE IF NOT EXISTS machines (
   id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
-  stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing')),
+  stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing','finishing')),
   status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('running','idle','breakdown','maintenance')),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- A job card is one production stage for one order. source_job_id is the completed job of the
+-- previous stage whose material this job consumes (NULL for spinning). One-to-one, so material
+-- cannot be consumed twice; the partial unique index below enforces it.
 CREATE TABLE IF NOT EXISTS job_cards (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
   machine_id INTEGER NOT NULL REFERENCES machines(id),
-  stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing')),
+  stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing','finishing')),
   shift TEXT NOT NULL CHECK (shift IN ('morning','evening','night')),
   status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','done')),
+  source_job_id INTEGER REFERENCES job_cards(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS production_logs (
@@ -111,4 +115,23 @@ CREATE TABLE IF NOT EXISTS cost_entries (
   id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id),
   kind TEXT NOT NULL CHECK (kind IN ('material','labour','overhead','supplier_bill')),
   amount REAL NOT NULL CHECK (amount >= 0), note TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===== PLATFORM (added: auth, notifications, purchasing, offline replay) =====
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT,
+  roles TEXT NOT NULL DEFAULT 'owner', read_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS purchase_requests (
+  id INTEGER PRIMARY KEY, material_id INTEGER NOT NULL REFERENCES materials(id),
+  supplier_id INTEGER REFERENCES suppliers(id), qty REAL NOT NULL CHECK (qty > 0), note TEXT,
+  status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','ordered','received','cancelled')),
+  requested_by TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  key TEXT PRIMARY KEY, status INTEGER NOT NULL, body TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );

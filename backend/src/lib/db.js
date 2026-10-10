@@ -13,9 +13,56 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 const root = path.resolve(here, '../../../db');
-const hasTables = db.prepare("SELECT name FROM sqlite_master WHERE name='orders'").get();
-if (!hasTables) {
-  db.exec(fs.readFileSync(path.join(root, 'schema.sql'), 'utf8'));
+const fresh = !db.prepare("SELECT name FROM sqlite_master WHERE name='orders'").get();
+// schema.sql is all CREATE ... IF NOT EXISTS, so running it every start upgrades older databases safely.
+db.exec(fs.readFileSync(path.join(root, 'schema.sql'), 'utf8'));
+const hasCol = (t, c) => db.prepare(`PRAGMA table_info(${t})`).all().some((x) => x.name === c);
+const tableSql = (t) => db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(t)?.sql || '';
+if (!hasCol('users', 'password_hash')) db.exec('ALTER TABLE users ADD COLUMN password_hash TEXT');
+if (!hasCol('users', 'active')) db.exec('ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+
+// Older databases have machines/job_cards CHECKs without 'finishing'. SQLite cannot change a
+// CHECK in place, so rebuild the two tables (same columns, new CHECK) and keep every row.
+function rebuild(name, createSql, copySql) {
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(`DROP TABLE IF EXISTS ${name}_new`);
+      db.exec(createSql);
+      db.exec(copySql);
+      db.exec(`DROP TABLE ${name}`);
+      db.exec(`ALTER TABLE ${name}_new RENAME TO ${name}`);
+    })();
+  } finally { db.pragma('foreign_keys = ON'); }
+}
+if (!tableSql('machines').includes("'finishing'")) rebuild('machines',
+  `CREATE TABLE machines_new (
+     id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+     stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing','finishing')),
+     status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('running','idle','breakdown','maintenance')),
+     created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
+  `INSERT INTO machines_new (id,name,stage,status,created_at) SELECT id,name,stage,status,created_at FROM machines`);
+if (!tableSql('job_cards').includes("'finishing'")) {
+  const src = hasCol('job_cards', 'source_job_id') ? 'source_job_id' : 'NULL';
+  rebuild('job_cards',
+    `CREATE TABLE job_cards_new (
+       id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
+       machine_id INTEGER NOT NULL REFERENCES machines(id),
+       stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing','finishing')),
+       shift TEXT NOT NULL CHECK (shift IN ('morning','evening','night')),
+       status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','done')),
+       source_job_id INTEGER REFERENCES job_cards(id),
+       created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
+    `INSERT INTO job_cards_new (id,order_id,machine_id,stage,shift,status,source_job_id,created_at)
+     SELECT id,order_id,machine_id,stage,shift,status,${src},created_at FROM job_cards`);
+}
+if (!hasCol('job_cards', 'source_job_id')) db.exec('ALTER TABLE job_cards ADD COLUMN source_job_id INTEGER REFERENCES job_cards(id)');
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_job_cards_source ON job_cards(source_job_id) WHERE source_job_id IS NOT NULL');
+
+if (fresh) {
   db.exec(fs.readFileSync(path.join(root, 'seed.sql'), 'utf8'));
   console.log('Database created and seeded at', file);
 }
+// A finishing machine is needed for the last production stage; add one if the mill has none.
+if (!db.prepare("SELECT 1 FROM machines WHERE stage='finishing' LIMIT 1").get())
+  db.prepare("INSERT INTO machines (name,stage,status) VALUES ('Finish-01','finishing','idle')").run();

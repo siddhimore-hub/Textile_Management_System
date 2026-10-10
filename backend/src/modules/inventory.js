@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../lib/db.js';
 import { validate, bad } from '../lib/http.js';
 import { publish } from '../lib/events.js';
+import { checkLowStock } from '../lib/notify.js';
 
 const r = Router();
 
@@ -37,7 +38,7 @@ r.post('/receipts', validate(z.object({
   const b = req.body;
   const info = db.prepare("INSERT INTO stock_movements (material_id,kind,qty,supplier_id,order_id,lot_no) VALUES (?, 'receipt', ?, ?, ?, ?)")
     .run(b.material_id, b.qty, b.supplier_id, b.order_id ?? null, b.lot_no);
-  publish('stock');
+  publish('stock'); checkLowStock(b.material_id);
   res.status(201).json({ data: { id: info.lastInsertRowid } });
 });
 
@@ -53,7 +54,7 @@ r.post('/stock/issue', validate(z.object({
   const given = -db.prepare("SELECT COALESCE(SUM(qty),0) q FROM stock_movements WHERE order_id=? AND material_id=? AND kind='issue'").get(b.order_id, b.material_id).q;
   if (need && b.qty > need - given) throw bad(`This order needs only ${need - given} more of this yarn`, 'OVER_REQUIREMENT');
   db.prepare("INSERT INTO stock_movements (material_id,kind,qty,order_id) VALUES (?, 'issue', ?, ?)").run(b.material_id, -b.qty, b.order_id);
-  publish('stock');
+  publish('stock'); checkLowStock(b.material_id);
   res.status(201).json({ data: { ok: true } });
 });
 

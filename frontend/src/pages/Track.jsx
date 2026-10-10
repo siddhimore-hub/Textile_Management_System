@@ -1,6 +1,7 @@
 // PUBLIC buyer page (no sidebar, no login). Owner: M3.
 import { useParams } from 'react-router-dom';
 import { useLive } from '../lib/api.js';
+import Brand from '../components/Brand.jsx';
 const STEPS = [['confirmed', 'Confirmed'], ['in_production', 'Being made'], ['in_qc', 'Quality check'], ['ready_to_ship', 'Ready to ship'], ['dispatched', 'Dispatched']];
 
 export default function Track() {
@@ -8,7 +9,7 @@ export default function Track() {
   const { data, error } = useLive(`/track/${token}`, ['orders', 'rolls', 'machines']);
   return (
     <div className="track">
-      <div className="brand dark">Everest<span>Textile Mills</span></div>
+      <Brand dark />
       {error ? <div className="empty err">We could not find this order. Check your link.</div> : !data ? <div className="empty">Loading</div> : (
         <div className="card">
           <h2>Order {data.id} for {data.buyer}</h2>

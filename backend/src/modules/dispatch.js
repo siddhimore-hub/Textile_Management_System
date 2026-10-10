@@ -5,6 +5,7 @@ import { db } from '../lib/db.js';
 import { validate, bad, notFound } from '../lib/http.js';
 import { orderProgress } from '../lib/orderStatus.js';
 import { publish } from '../lib/events.js';
+import { notify } from '../lib/notify.js';
 
 const r = Router();
 
@@ -43,6 +44,7 @@ r.post('/dispatches', validate(z.object({
     const inv = db.prepare('INSERT INTO invoices (dispatch_id,total) VALUES (?,?)').run(d.lastInsertRowid, total);
     return { dispatch_id: d.lastInsertRowid, invoice_id: inv.lastInsertRowid, total };
   })();
+  notify('invoice', `Invoice ${result.invoice_id} raised: ${result.total.toLocaleString('en-IN')} for order ${order.id}`, '/invoices', 'accounts,sales');
   publish('rolls'); publish('orders'); publish('dispatch');
   res.status(201).json({ data: result });
 });

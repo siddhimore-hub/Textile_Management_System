@@ -63,4 +63,49 @@ r.get('/dashboard', (_q, res) => {
   } });
 });
 
+// Metres made per day for the dashboard chart (days with no output show 0).
+r.get('/dashboard/trend', (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 14, 3), 90);
+  const rows = db.prepare(`SELECT date(created_at) d, SUM(metres) m FROM production_logs WHERE date(created_at) >= date('now', ?) GROUP BY d`).all(`-${days - 1} days`);
+  const byDay = new Map(rows.map((x) => [x.d, x.m]));
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+    out.push({ day: d, metres: byDay.get(d) || 0 });
+  }
+  res.json({ data: out });
+});
+
+// Orders that need attention. overdue = past deadline; due_soon = 3 days or less and not finished;
+// behind = progress is 15+ points below where a straight line from start to deadline would be.
+r.get('/dashboard/at-risk', (_q, res) => {
+  const day = 86400000; const today = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  const out = [];
+  for (const o of db.prepare('SELECT o.*, b.name AS buyer FROM orders o JOIN buyers b ON b.id=o.buyer_id').all()) {
+    const p = orderProgress(o.id);
+    if (p.status === 'dispatched') continue;
+    const daysLeft = Math.round((new Date(o.deadline).getTime() - today) / day);
+    const start = new Date(o.created_at.slice(0, 10)).getTime();
+    const expected = Math.min(100, Math.max(0, ((today - start) / Math.max(day, new Date(o.deadline).getTime() - start)) * 100));
+    const shortYarn = db.prepare('SELECT material_id, qty_required FROM order_requirements WHERE order_id=?').all(o.id).some((l) => {
+      const given = -db.prepare("SELECT COALESCE(SUM(qty),0) q FROM stock_movements WHERE order_id=? AND material_id=? AND kind='issue'").get(o.id, l.material_id).q;
+      return l.qty_required - given > stockOf(l.material_id);
+    });
+    let risk = null;
+    if (daysLeft < 0) risk = 'overdue'; else if (daysLeft <= 3) risk = 'due_soon'; else if (p.percent + 15 < expected) risk = 'behind';
+    if (!risk && !(shortYarn && p.percent === 0 && daysLeft <= 7)) continue;
+    out.push({ order_id: o.id, buyer: o.buyer, fabric_type: o.fabric_type, deadline: o.deadline, days_left: daysLeft, percent: p.percent,
+      status: p.status, risk: risk || 'yarn_short', yarn_short: shortYarn });
+  }
+  const rank = { overdue: 0, due_soon: 1, behind: 2, yarn_short: 3 };
+  res.json({ data: out.sort((a, b) => rank[a.risk] - rank[b.risk] || a.days_left - b.days_left) });
+});
+
+// Money still to collect, per buyer.
+r.get('/finance/receivables', (_q, res) => res.json({ data: db.prepare(
+  `SELECT b.id AS buyer_id, b.name AS buyer, COUNT(i.id) AS invoices, COALESCE(SUM(i.total),0) AS billed,
+     COALESCE(SUM((SELECT SUM(amount) FROM payments WHERE invoice_id=i.id)),0) AS paid
+   FROM buyers b JOIN orders o ON o.buyer_id=b.id JOIN dispatches d ON d.order_id=o.id JOIN invoices i ON i.dispatch_id=d.id
+   GROUP BY b.id ORDER BY b.name`).all().map((x) => ({ ...x, outstanding: Math.round((x.billed - x.paid) * 100) / 100 })) }));
+
 export default r;

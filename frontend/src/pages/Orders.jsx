@@ -1,12 +1,14 @@
 // OWNER: M1. New order + yarn check + issue yarn.
 import { useState } from 'react';
-import { useLive, useAction, opts } from '../lib/api.js';
-import DataTable from '../components/DataTable.jsx';
+import { api, useLive, useAction, opts } from '../lib/api.js';
+import { useAuth } from '../lib/auth.jsx';
+import DataTable, { Pill } from '../components/DataTable.jsx';
 import Msg from '../components/Msg.jsx';
 
 const blank = { buyer_id: '', fabric_type: '', colour: '', qty_metres: '', price_per_metre: '', deadline: '' };
 
 export default function Orders() {
+  const { can } = useAuth();
   const orders = useLive('/orders', ['orders', 'rolls']);
   const buyers = useLive('/buyers'); const mats = useLive('/materials');
   const [f, setF] = useState(blank); const [reqs, setReqs] = useState([{ material_id: '', qty_required: '' }]);
@@ -23,14 +25,14 @@ export default function Orders() {
     const d = await run('/orders', { method: 'POST', body });
     if (d) { setLink(`${location.origin}/track/${d.tracking_token}`); setF(blank); setReqs([{ material_id: '', qty_required: '' }]); }
   }
-  async function feasibility(o) { setCheck({ order: o, ...(await (await fetch(`/api/orders/${o.id}/feasibility`)).json()).data }); }
+  async function feasibility(o) { setCheck({ order: o, ...(await api(`/orders/${o.id}/feasibility`)) }); }
   async function issueAll() {
     for (const l of check.lines) await runIssue('/stock/issue', { method: 'POST', body: { material_id: l.material_id, order_id: check.order.id, qty: l.qty_required } });
     feasibility(check.order);
   }
   return (
     <>
-      <form className="card form" onSubmit={save} noValidate><h2>New order</h2>
+      {can(['sales']) && <form className="card form" onSubmit={save} noValidate><h2>New order</h2>
         <div className="fields">
           <label className={fe.buyer_id ? 'has-error' : ''}><span>Buyer</span>
             <select value={f.buyer_id} onChange={(e) => setF({ ...f, buyer_id: e.target.value })}><option value="">Choose</option>
@@ -48,20 +50,20 @@ export default function Orders() {
         <button type="button" className="btn ghost" onClick={() => setReqs([...reqs, { material_id: '', qty_required: '' }])}>Add yarn line</button>
         <div className="form-foot"><button className="btn" type="submit">Create order</button><Msg msg={msg} />
           {link && <span>Buyer link: <a href={link}>{link}</a></span>}</div>
-      </form>
+      </form>}
 
       {check && (
         <div className="card"><h2>Yarn check for order {check.order.id}</h2>
           {check.lines.length === 0 ? <p>No yarn requirement was entered for this order.</p> : (
             <DataTable columns={[['name', 'Material'], ['qty_required', 'Needed'], ['on_hand', 'In stock'], ['shortfall', 'Short by']]} rows={check.lines.map((l) => ({ ...l, id: l.material_id }))} />)}
           <div className="form-foot">
-            {check.can_start ? <button className="btn" onClick={issueAll}>Issue yarn to production</button> : <span className="err">Not enough yarn. Receive more stock first.</span>}
+            {!can(['store', 'sales']) ? null : check.can_start ? <button className="btn" onClick={issueAll}>Issue yarn to production</button> : <span className="err">Not enough yarn. Receive more stock first.</span>}
             <Msg msg={issueMsg} />
           </div></div>)}
 
       {orders.data && <div className="table-wrap"><table><thead><tr><th>Order</th><th>Buyer</th><th>Fabric</th><th>Metres</th><th>Deadline</th><th>Status</th><th>Done</th><th /></tr></thead>
         <tbody>{orders.data.map((o) => (<tr key={o.id}><td>{o.id}</td><td>{o.buyer}</td><td>{o.fabric_type}, {o.colour}</td><td>{o.qty_metres}</td><td>{o.deadline}</td>
-          <td><span className="pill">{o.status.replaceAll('_', ' ')}</span></td><td>{o.percent}%</td>
+          <td><Pill v={o.status} /></td><td>{o.percent}%</td>
           <td><button className="btn ghost" onClick={() => feasibility(o)}>Check yarn</button></td></tr>))}</tbody></table></div>}
     </>
   );

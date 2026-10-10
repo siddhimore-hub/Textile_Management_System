@@ -13,6 +13,12 @@ npm run smoke          # optional: runs the whole flow against a fresh DB
 ```
 Reset data any time: `npm run db:reset`.
 
+**Log in** with a seeded account, password `everest123` (change it under Users and roles after first login):
+`owner@everest.test`, `store@everest.test`, `sup@everest.test`, `qc@everest.test`, `sales@everest.test`, `acc@everest.test`. Each role sees only its own menu.
+
+**Tests:** `npm test` (backend API tests + frontend offline-queue and render tests). `npm run smoke` needs a running backend and a fresh DB.
+**Phone/offline:** `npm run build` then serve `frontend/dist` (it registers a service worker that keeps the app and last-seen data available offline).
+
 ## Layout
 ```
 db/                schema.sql + seed.sql (SQLite)         shared, change via PR only
