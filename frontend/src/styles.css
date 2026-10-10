@@ -1,0 +1,65 @@
+/* Design tokens: indigo (dye vat) base, turmeric accent. Change colours HERE only. Works offline: system fonts. */
+:root {
+  --indigo-900: #14203a; --indigo-700: #22325a; --indigo-100: #e6eaf4;
+  --turmeric: #e0a526; --bg: #f2f4f8; --card: #ffffff; --line: #dde2ec; --text: #1b2437; --muted: #66708a;
+  --ok: #1f8a5b; --warn: #b7791f; --bad: #c0392b; --radius: 8px; --sidebar: 248px;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; color: var(--text);
+}
+* { box-sizing: border-box; } body { margin: 0; background: var(--bg); line-height: 1.5; }
+h1, h2, h3 { margin: 0; line-height: 1.25; } h1 { font-size: 1.25rem; } h2 { font-size: 1.05rem; margin-bottom: .75rem; }
+a { color: var(--indigo-700); }
+:focus-visible { outline: 3px solid var(--turmeric); outline-offset: 2px; }
+
+.shell { display: flex; min-height: 100vh; }
+.sidebar { width: var(--sidebar); background: var(--indigo-900); color: #cfd6e8; padding: 1.25rem 0; position: fixed; inset: 0 auto 0 0; overflow-y: auto; z-index: 30; }
+.brand { font-weight: 700; font-size: 1.15rem; padding: 0 1.25rem 1.25rem; color: #fff; display: flex; flex-direction: column; }
+.brand span { font-weight: 400; font-size: .8rem; color: #9fb0d6; } .brand.dark { color: var(--indigo-900); padding: 0 0 1rem; } .brand.dark span { color: var(--muted); }
+.nav-group { margin-bottom: 1.25rem; } .nav-title { margin: 0 0 .35rem; padding: 0 1.25rem; font-size: .78rem; color: #8b9bc2; }
+.nav-link { display: flex; justify-content: space-between; align-items: center; padding: .55rem 1.25rem; color: #cfd6e8; text-decoration: none; border-left: 4px solid transparent; }
+.nav-link:hover { background: var(--indigo-700); }
+.nav-link.active { background: var(--indigo-700); color: #fff; border-left-color: var(--turmeric); font-weight: 600; }
+.owner { font-style: normal; font-size: .7rem; color: #9fb0d6; border: 1px solid #3b4d7a; border-radius: 4px; padding: 0 .35rem; }
+
+.main { margin-left: var(--sidebar); flex: 1; min-width: 0; }
+.navbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 1rem; height: 56px; padding: 0 1.5rem; background: var(--card); border-bottom: 1px solid var(--line); }
+.nav-right { margin-left: auto; display: flex; gap: .75rem; align-items: center; } .user { color: var(--muted); font-size: .9rem; }
+.menu-btn { display: none; } .scrim { display: none; }
+.content { padding: 1.5rem; max-width: 1180px; }
+.owner-note { color: var(--muted); font-size: .9rem; margin: 0 0 1rem; }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem 1.25rem; margin-bottom: 1.25rem; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; display: flex; flex-direction: column; border-top: 3px solid var(--indigo-700); }
+.tile b { font-size: 1.9rem; color: var(--indigo-900); } .tile span { color: var(--muted); font-size: .9rem; }
+.money { display: flex; flex-wrap: wrap; gap: 2rem; } .money div { display: flex; flex-direction: column; } .money span { color: var(--muted); font-size: .9rem; } .money b { font-size: 1.3rem; }
+
+.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+table { width: 100%; border-collapse: collapse; min-width: 560px; } th, td { text-align: left; padding: .65rem .9rem; border-bottom: 1px solid var(--line); font-size: .92rem; }
+th { background: var(--indigo-100); color: var(--indigo-900); font-weight: 600; } tr:last-child td { border-bottom: 0; }
+.empty { padding: 2rem; text-align: center; color: var(--muted); background: var(--card); border: 1px dashed var(--line); border-radius: var(--radius); }
+
+.pill { display: inline-block; padding: .1rem .6rem; border-radius: 999px; font-size: .8rem; background: var(--indigo-100); color: var(--indigo-700); }
+.pill.ok { background: #dff3ea; color: var(--ok); } .pill.warn { background: #fbefd5; color: var(--warn); } .pill.bad { background: #f9dedb; color: var(--bad); } .pill.muted { background: #eceff5; color: var(--muted); }
+
+.form .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .9rem; }
+label { display: flex; flex-direction: column; gap: .25rem; font-size: .88rem; color: var(--muted); }
+input, select { padding: .55rem .65rem; border: 1px solid var(--line); border-radius: 6px; font: inherit; color: var(--text); background: #fff; }
+label.has-error input, label.has-error select { border-color: var(--bad); } .err { color: var(--bad); font-size: .82rem; } .msg-ok { color: var(--ok); }
+.form-foot { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; }
+.btn { background: var(--indigo-700); color: #fff; border: 0; border-radius: 6px; padding: .6rem 1.2rem; font: inherit; cursor: pointer; } .btn:hover { background: var(--indigo-900); }
+
+.flow { list-style: none; margin: 0; padding: 0; max-width: 680px; } .flow li { display: flex; gap: 1rem; padding-bottom: 1.4rem; position: relative; }
+.flow li:not(:last-child)::before { content: ""; position: absolute; left: 15px; top: 34px; bottom: 0; width: 2px; background: var(--line); }
+.dot { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--indigo-700); color: #fff; display: grid; place-items: center; font-weight: 600; }
+.flow h3 { font-size: 1rem; } .flow p { margin: .15rem 0 .3rem; color: var(--muted); }
+
+.track { max-width: 560px; margin: 0 auto; padding: 2rem 1rem; } .bar { height: 10px; background: var(--indigo-100); border-radius: 99px; overflow: hidden; margin: .5rem 0; }
+.bar i { display: block; height: 100%; background: var(--turmeric); }
+
+@media (max-width: 860px) {
+  .sidebar { transform: translateX(-100%); transition: transform .2s; } .sidebar.open { transform: none; }
+  .scrim { display: block; position: fixed; inset: 0; background: rgba(10, 16, 32, .45); z-index: 25; }
+  .main { margin-left: 0; } .menu-btn { display: inline-block; background: var(--indigo-100); border: 0; border-radius: 6px; padding: .4rem .8rem; font: inherit; color: var(--indigo-900); }
+  .content { padding: 1rem; } .navbar { padding: 0 1rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

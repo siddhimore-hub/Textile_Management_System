@@ -1,0 +1,114 @@
+-- Everest Textile Mills - SQLite schema. Owner tags show which member edits which tables.
+-- Naming: snake_case, plural table names, <thing>_id foreign keys, created_at on every table.
+PRAGMA foreign_keys = ON;
+
+-- ===== SHARED / M4 =====
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('owner','store','supervisor','qc','sales','accounts')),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY, actor TEXT, action TEXT NOT NULL, entity TEXT, entity_id INTEGER,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===== M1 : INVENTORY + ORDERS =====
+CREATE TABLE IF NOT EXISTS suppliers (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS buyers (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT, email TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS materials (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, yarn_type TEXT NOT NULL, colour TEXT NOT NULL,
+  unit TEXT NOT NULL DEFAULT 'kg', reorder_level REAL NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- Ledger: never UPDATE quantities. qty is signed (+ receipt/return, - issue).
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id INTEGER PRIMARY KEY, material_id INTEGER NOT NULL REFERENCES materials(id),
+  kind TEXT NOT NULL CHECK (kind IN ('receipt','issue','return','adjust')),
+  qty REAL NOT NULL, supplier_id INTEGER REFERENCES suppliers(id),
+  order_id INTEGER REFERENCES orders(id), lot_no TEXT, note TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY, buyer_id INTEGER NOT NULL REFERENCES buyers(id),
+  fabric_type TEXT NOT NULL, colour TEXT NOT NULL, qty_metres REAL NOT NULL CHECK (qty_metres > 0),
+  price_per_metre REAL NOT NULL CHECK (price_per_metre >= 0), deadline TEXT NOT NULL,
+  tracking_token TEXT UNIQUE NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  -- NOTE: no status column. Status is DERIVED (see backend/src/lib/orderStatus.js)
+);
+CREATE TABLE IF NOT EXISTS order_requirements (
+  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
+  material_id INTEGER NOT NULL REFERENCES materials(id), qty_required REAL NOT NULL CHECK (qty_required > 0)
+);
+
+-- ===== M2 : PRODUCTION + QC =====
+CREATE TABLE IF NOT EXISTS machines (
+  id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
+  stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing')),
+  status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('running','idle','breakdown','maintenance')),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS job_cards (
+  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
+  machine_id INTEGER NOT NULL REFERENCES machines(id),
+  stage TEXT NOT NULL CHECK (stage IN ('spinning','weaving','dyeing')),
+  shift TEXT NOT NULL CHECK (shift IN ('morning','evening','night')),
+  status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','done')),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS production_logs (
+  id INTEGER PRIMARY KEY, job_card_id INTEGER NOT NULL REFERENCES job_cards(id),
+  metres REAL NOT NULL CHECK (metres > 0), created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS rolls (
+  id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL,
+  order_id INTEGER NOT NULL REFERENCES orders(id), machine_id INTEGER NOT NULL REFERENCES machines(id),
+  job_card_id INTEGER REFERENCES job_cards(id), metres REAL NOT NULL CHECK (metres > 0),
+  qc_status TEXT NOT NULL DEFAULT 'pending' CHECK (qc_status IN ('pending','pass','rework','reject')),
+  dispatch_id INTEGER REFERENCES dispatches(id), created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS qc_inspections (
+  id INTEGER PRIMARY KEY, roll_id INTEGER NOT NULL REFERENCES rolls(id),
+  result TEXT NOT NULL CHECK (result IN ('pass','rework','reject')),
+  defect_type TEXT CHECK (defect_type IN ('hole','colour_mismatch','uneven_weave','other')),
+  notes TEXT, inspector TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===== M3 : DISPATCH + INVOICE =====
+CREATE TABLE IF NOT EXISTS dispatches (
+  id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
+  vehicle_no TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY, dispatch_id INTEGER UNIQUE NOT NULL REFERENCES dispatches(id),
+  total REAL NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY, invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+  amount REAL NOT NULL CHECK (amount > 0), created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===== M4 : WORKFORCE + FINANCE =====
+CREATE TABLE IF NOT EXISTS workers (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, daily_wage REAL NOT NULL CHECK (daily_wage >= 0),
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS attendance (
+  id INTEGER PRIMARY KEY, worker_id INTEGER NOT NULL REFERENCES workers(id),
+  work_date TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('present','absent','half')),
+  UNIQUE (worker_id, work_date)
+);
+CREATE TABLE IF NOT EXISTS wage_payouts (
+  id INTEGER PRIMARY KEY, worker_id INTEGER NOT NULL REFERENCES workers(id),
+  month TEXT NOT NULL, amount REAL NOT NULL CHECK (amount >= 0), created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (worker_id, month)
+);
+CREATE TABLE IF NOT EXISTS cost_entries (
+  id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id),
+  kind TEXT NOT NULL CHECK (kind IN ('material','labour','overhead','supplier_bill')),
+  amount REAL NOT NULL CHECK (amount >= 0), note TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
