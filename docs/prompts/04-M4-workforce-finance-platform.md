@@ -3,7 +3,7 @@ Files you own: `backend/src/modules/workforce.js`, `finance.js`; `frontend/src/c
 
 Already working: workers, attendance with one-per-day rule, payroll run, cost entries, payments with overpayment guard, order costs, month summary, dashboard numbers, sidebar + navbar + dashboard + process flow pages.
 
-Build next, in this order:
+Build next (items already done in the UI are noted in HANDOVER.md; skip them), in this order:
 1. Attendance page: date picker, a row per worker with Present / Half / Absent buttons (POST /attendance), shows today's state, works on a phone.
 2. Wages page: month picker, "Run payroll", table of payouts, total. Add a worker form.
 3. Costs page: add cost entries (material, labour, overhead, supplier bill) per order; cost per metre table; auto-suggest labour cost from `production_logs` and worker wages (explain the formula you choose in the page).

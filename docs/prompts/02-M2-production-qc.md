@@ -3,7 +3,7 @@ Files you own: `backend/src/modules/production.js`, `qc.js`; pages `Machines.jsx
 
 Already working: machine list with today's output, status change, job assignment with rules, output logging, finish job, roll creation with code, inspection with required defect, defect counts.
 
-Build next, in this order:
+Build next (items already done in the UI are noted in HANDOVER.md; skip them), in this order:
 1. Machines page as a live board: one card per machine (name, stage, status pill, current order, metres today). Buttons: change status (running/idle/breakdown/maintenance), "Assign job" (pick order + shift), "Log output" (metres), "Finish job". Board refreshes by itself (topic `machines`).
 2. Rolls page: "Create roll" from an active job (metres), list with filter tabs (pending, rework, pass, reject), inspection dialog (pass / rework / reject, defect type required for rework or reject, notes). Show a printable roll label with the roll code (a simple QR can be generated offline with a small library, only if you can explain it).
 3. Rework loop: a roll marked rework can be re-inspected; keep every inspection row (history).

@@ -1,7 +1,7 @@
 // PUBLIC buyer page (no sidebar, no login). Owner: M3.
 import { useParams } from 'react-router-dom';
 import { useLive } from '../lib/api.js';
-import { Pill } from '../components/DataTable.jsx';
+const STEPS = [['confirmed', 'Confirmed'], ['in_production', 'Being made'], ['in_qc', 'Quality check'], ['ready_to_ship', 'Ready to ship'], ['dispatched', 'Dispatched']];
 
 export default function Track() {
   const { token } = useParams();
@@ -13,7 +13,7 @@ export default function Track() {
         <div className="card">
           <h2>Order {data.id} for {data.buyer}</h2>
           <p>{data.fabric_type}, {data.colour}, {data.qty_metres} metres. Due {data.deadline}.</p>
-          <p>Status: <Pill v={data.status} /></p>
+          <ol className="stepper">{STEPS.map(([k, l], i) => <li key={k} className={i <= STEPS.findIndex(([x]) => x === data.status) ? 'on' : ''}>{l}</li>)}</ol>
           <div className="bar"><i style={{ width: `${data.percent}%` }} /></div>
           <small>{data.produced_metres} of {data.target_metres} metres made ({data.percent}%)</small>
         </div>)}

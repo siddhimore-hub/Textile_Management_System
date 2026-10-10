@@ -3,7 +3,7 @@ Files you own: `backend/src/modules/dispatch.js`, `backend/src/lib/orderStatus.j
 
 Already working: finished stock list, dispatch with rules (QC-passed, right order, once only), invoice total from rolls, invoices list, public `/track/:token` API and a basic Track page, derived order status.
 
-Build next, in this order:
+Build next (items already done in the UI are noted in HANDOVER.md; skip them), in this order:
 1. Finished stock page: group rolls by order, checkboxes, a "Dispatch selected" form (vehicle number validated like TN09AB1234). Show the server error if a rule fails.
 2. Dispatch note and invoice print view (`window.print()` with a print stylesheet): lists rolls, metres, price, total; matches the invoice exactly.
 3. Buyer tracking page polish: stages shown as a stepper (confirmed, in production, quality check, ready to ship, dispatched), percent bar, estimated delivery vs deadline, rolls ready count. Refreshes live. Never show costs or other buyers' data.

@@ -13,6 +13,11 @@ export const stockOf = (materialId) =>
 r.get('/materials', (_q, res) => res.json({ data: db.prepare('SELECT * FROM materials ORDER BY name').all() }));
 r.get('/suppliers', (_q, res) => res.json({ data: db.prepare('SELECT * FROM suppliers ORDER BY name').all() }));
 
+r.post('/suppliers', validate(z.object({ name: z.string().trim().min(2), phone: z.string().trim().regex(/^\d{10}$/, 'Phone must be 10 digits') })), (req, res) => {
+  const info = db.prepare('INSERT INTO suppliers (name,phone) VALUES (?,?)').run(req.body.name, req.body.phone);
+  res.status(201).json({ data: { id: info.lastInsertRowid } });
+});
+
 r.post('/materials', validate(z.object({
   name: z.string().trim().min(2), yarn_type: z.string().trim().min(2), colour: z.string().trim().min(2),
   unit: z.enum(['kg', 'bale']).default('kg'), reorder_level: z.coerce.number().min(0),
@@ -44,6 +49,9 @@ r.post('/stock/issue', validate(z.object({
   const b = req.body;
   const have = stockOf(b.material_id);
   if (b.qty > have) throw bad(`Only ${have} in stock`, 'INSUFFICIENT_STOCK');
+  const need = db.prepare('SELECT COALESCE(SUM(qty_required),0) q FROM order_requirements WHERE order_id=? AND material_id=?').get(b.order_id, b.material_id).q;
+  const given = -db.prepare("SELECT COALESCE(SUM(qty),0) q FROM stock_movements WHERE order_id=? AND material_id=? AND kind='issue'").get(b.order_id, b.material_id).q;
+  if (need && b.qty > need - given) throw bad(`This order needs only ${need - given} more of this yarn`, 'OVER_REQUIREMENT');
   db.prepare("INSERT INTO stock_movements (material_id,kind,qty,order_id) VALUES (?, 'issue', ?, ?)").run(b.material_id, -b.qty, b.order_id);
   publish('stock');
   res.status(201).json({ data: { ok: true } });

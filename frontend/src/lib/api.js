@@ -27,3 +27,14 @@ export function useLive(path, topics = []) {
   }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
   return { ...state, reload: load };
 }
+
+// Run a write action and keep its result message. Usage: const [run, msg] = useAction(reload); run('/jobs', {method:'POST', body})
+export function useAction(after) {
+  const [msg, setMsg] = useState(null);
+  const run = async (path, opts) => {
+    try { const d = await api(path, opts); setMsg({ ok: true, text: 'Saved' }); after?.(); return d; }
+    catch (e) { setMsg({ ok: false, text: e.message, fields: e.fields }); return null; }
+  };
+  return [run, msg];
+}
+export const opts = (rows, label = 'name') => (rows || []).map((r) => ({ value: r.id, label: typeof label === 'function' ? label(r) : r[label] }));
