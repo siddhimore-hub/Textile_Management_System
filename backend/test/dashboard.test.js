@@ -55,7 +55,7 @@ test('receivables per buyer show billed, paid and outstanding', async () => {
   const roll = await call('/rolls', { role: 'supervisor', method: 'POST', body: { job_card_id: p.finishing, metres: 20 } });
   await call(`/rolls/${roll.data.id}/inspect`, { role: 'qc', method: 'POST', body: { result: 'pass' } });
   const d = await call('/dispatches', { role: 'sales', method: 'POST', body: { order_id: o.id, roll_ids: [roll.data.id], vehicle_no: 'TN09AB1234' } });
-  await call('/payments', { role: 'accounts', method: 'POST', body: { invoice_id: d.data.invoice_id, amount: 500 } });
+  await call('/payments', { role: 'accounts', method: 'POST', body: { dispatch_id: d.data.dispatch_id, amount: 500 } });
   const rec = await get();
   assert.equal(rec.billed - was.billed, 2000); assert.equal(rec.paid - was.paid, 500); assert.equal(rec.outstanding - was.outstanding, 1500);
   assert.equal((await call('/finance/receivables', { role: 'store' })).status, 403);

@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { db } from '../lib/db.js';
 import { validate, bad, notFound } from '../lib/http.js';
 import { orderProgress } from '../lib/orderStatus.js';
+import { dispatchDue } from '../lib/invoicing.js';
 import { publish } from '../lib/events.js';
-import { notify } from '../lib/notify.js';
 
 const r = Router();
 
@@ -15,12 +15,14 @@ r.get('/finished-stock', (_q, res) => res.json({ data: db.prepare(
    WHERE r.qc_status='pass' AND r.dispatch_id IS NULL ORDER BY r.id`).all() }));
 
 r.get('/dispatches', (_q, res) => res.json({ data: db.prepare(
-  `SELECT d.id, d.order_id, d.vehicle_no, d.created_at, b.name AS buyer, i.id AS invoice_id, i.total,
-     (SELECT COUNT(*) FROM rolls WHERE dispatch_id=d.id) AS rolls
+  `SELECT d.id, d.order_id, d.vehicle_no, d.total, d.created_at, b.name AS buyer, i.id AS invoice_id,
+     (SELECT COUNT(*) FROM rolls WHERE dispatch_id=d.id) AS rolls,
+     COALESCE((SELECT SUM(amount) FROM payments WHERE dispatch_id=d.id),0) AS paid
    FROM dispatches d JOIN orders o ON o.id=d.order_id JOIN buyers b ON b.id=o.buyer_id
    LEFT JOIN invoices i ON i.dispatch_id=d.id ORDER BY d.id DESC`).all() }));
 
 // Dispatch rolls to the right buyer. Rules: rolls must be QC-passed, belong to the order, not already sent.
+// No invoice here: the amount due is recorded on the dispatch and the invoice is raised only when fully paid.
 r.post('/dispatches', validate(z.object({
   order_id: z.coerce.number().int().positive(),
   roll_ids: z.array(z.coerce.number().int().positive()).min(1, 'Select at least one roll'),
@@ -37,21 +39,35 @@ r.post('/dispatches', validate(z.object({
     if (roll.dispatch_id) throw bad(`${roll.code} was already dispatched`, 'ALREADY_DISPATCHED');
   }
   const metres = rolls.reduce((s, x) => s + x.metres, 0);
-  const total = Math.round(metres * order.price_per_metre * 100) / 100; // invoice always = rolls x price
-  const result = db.transaction(() => {
-    const d = db.prepare('INSERT INTO dispatches (order_id,vehicle_no) VALUES (?,?)').run(order.id, b.vehicle_no);
+  const total = Math.round(metres * order.price_per_metre * 100) / 100; // amount due = rolls x price
+  const dispatch_id = db.transaction(() => {
+    const d = db.prepare('INSERT INTO dispatches (order_id,vehicle_no,total) VALUES (?,?,?)').run(order.id, b.vehicle_no, total);
     for (const roll of rolls) db.prepare('UPDATE rolls SET dispatch_id=? WHERE id=?').run(d.lastInsertRowid, roll.id);
-    const inv = db.prepare('INSERT INTO invoices (dispatch_id,total) VALUES (?,?)').run(d.lastInsertRowid, total);
-    return { dispatch_id: d.lastInsertRowid, invoice_id: inv.lastInsertRowid, total };
+    return d.lastInsertRowid;
   })();
-  notify('invoice', `Invoice ${result.invoice_id} raised: ${result.total.toLocaleString('en-IN')} for order ${order.id}`, '/invoices', 'accounts,sales');
   publish('rolls'); publish('orders'); publish('dispatch');
-  res.status(201).json({ data: result });
+  res.status(201).json({ data: { dispatch_id, total } });
+});
+
+// Pending payments: every dispatch with what is due, paid and outstanding, plus its payment history.
+r.get('/pending-payments', (_q, res) => {
+  const rows = db.prepare(
+    `SELECT d.id, d.order_id, d.vehicle_no, d.total, d.created_at, b.name AS buyer, i.id AS invoice_id
+     FROM dispatches d JOIN orders o ON o.id=d.order_id JOIN buyers b ON b.id=o.buyer_id
+     LEFT JOIN invoices i ON i.dispatch_id=d.id ORDER BY d.id DESC`).all();
+  const payments = db.prepare('SELECT id, dispatch_id, amount, created_at FROM payments ORDER BY id').all();
+  const out = rows.map((d) => {
+    const due = dispatchDue(d.id);
+    const history = payments.filter((p) => p.dispatch_id === d.id);
+    return { ...d, total: due.total, paid: due.paid, outstanding: due.outstanding,
+      status: due.outstanding <= 0 ? 'paid' : (due.paid > 0 ? 'partial' : 'pending'), payments: history };
+  });
+  res.json({ data: out });
 });
 
 r.get('/invoices', (_q, res) => res.json({ data: db.prepare(
   `SELECT i.id, i.total, i.created_at, d.order_id, b.name AS buyer,
-     COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id=i.id),0) AS paid
+     COALESCE((SELECT SUM(amount) FROM payments WHERE dispatch_id=i.dispatch_id),0) AS paid
    FROM invoices i JOIN dispatches d ON d.id=i.dispatch_id JOIN orders o ON o.id=d.order_id JOIN buyers b ON b.id=o.buyer_id
    ORDER BY i.id DESC`).all() }));
 

@@ -11,8 +11,8 @@ let vite; let render;
 before(async () => { vite = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'silent' }); ({ render } = await vite.ssrLoadModule('/test/render-entry.jsx')); });
 after(() => vite.close());
 
-const ROUTES = ['/', '/flow', '/orders', '/stock', '/purchase-requests', '/parties', '/machines', '/spinning', '/loom', '/dyeing', '/finishing', '/rolls', '/finished', '/dispatches', '/invoices',
-  '/attendance', '/payroll', '/costs', '/users', '/audit', '/scan/R-2026-00001', '/labels?ids=1,2', '/nope'];
+const ROUTES = ['/', '/orders', '/stock', '/purchase-requests', '/parties', '/supplier-history', '/compatibility', '/machines', '/spinning', '/loom', '/dyeing', '/finishing', '/rolls', '/finished', '/dispatches', '/invoices', '/pending-payments',
+  '/attendance', '/payroll', '/costs', '/income-expenses', '/users', '/audit', '/scan/R-2026-00001', '/labels?ids=1,2', '/nope'];
 
 test('every route renders for the owner', () => {
   for (const r of ROUTES) assert.doesNotThrow(() => render(r, 'owner'), r);

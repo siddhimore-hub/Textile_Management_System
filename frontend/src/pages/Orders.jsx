@@ -10,20 +10,28 @@ const blank = { buyer_id: '', fabric_type: '', colour: '', qty_metres: '', price
 export default function Orders() {
   const { can } = useAuth();
   const orders = useLive('/orders', ['orders', 'rolls']);
-  const buyers = useLive('/buyers'); const mats = useLive('/materials');
-  const [f, setF] = useState(blank); const [reqs, setReqs] = useState([{ material_id: '', qty_required: '' }]);
+  const buyers = useLive('/buyers'); const mats = useLive('/materials'); const fabrics = useLive('/compatibility/fabrics');
+  const [f, setF] = useState(blank); const [reqs, setReqs] = useState([{ material_id: '', qty_required: '', blend_ratio: '' }]);
+  const [allowed, setAllowed] = useState(null);
   const [link, setLink] = useState(null); const [check, setCheck] = useState(null);
   const [run, msg] = useAction(orders.reload); const [runIssue, issueMsg] = useAction();
   const fe = msg?.fields || {};
+  const materialOptions = (allowed?.length ? allowed : mats.data || []).filter((m) => !allowed?.length || allowed.some((x) => x.id === m.id));
   const field = (k, label, type = 'text') => (
     <label className={fe[k] ? 'has-error' : ''}><span>{label}</span>
       <input type={type} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />{fe[k] && <small className="err">{fe[k]}</small>}</label>);
+
+  async function pickFabric(fabric_type) {
+    setF({ ...f, fabric_type });
+    try { const list = await api(`/compatibility/materials?fabric_type=${encodeURIComponent(fabric_type)}`); setAllowed(Array.isArray(list) ? list : null); }
+    catch { setAllowed(null); }
+  }
 
   async function save(e) {
     e.preventDefault(); setLink(null);
     const body = { ...f, requirements: reqs.filter((r) => r.material_id && r.qty_required) };
     const d = await run('/orders', { method: 'POST', body });
-    if (d) { setLink(`${location.origin}/track/${d.tracking_token}`); setF(blank); setReqs([{ material_id: '', qty_required: '' }]); }
+    if (d) { setLink(`${location.origin}/track/${d.tracking_token}`); setF(blank); setAllowed(null); setReqs([{ material_id: '', qty_required: '', blend_ratio: '' }]); }
   }
   async function feasibility(o) { setCheck({ order: o, ...(await api(`/orders/${o.id}/feasibility`)) }); }
   async function issueAll() {
@@ -37,17 +45,24 @@ export default function Orders() {
           <label className={fe.buyer_id ? 'has-error' : ''}><span>Buyer</span>
             <select value={f.buyer_id} onChange={(e) => setF({ ...f, buyer_id: e.target.value })}><option value="">Choose</option>
               {opts(buyers.data).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>{fe.buyer_id && <small className="err">{fe.buyer_id}</small>}</label>
-          {field('fabric_type', 'Fabric')}{field('colour', 'Colour')}{field('qty_metres', 'Metres', 'number')}
+          <label className={fe.fabric_type ? 'has-error' : ''}><span>Fabric</span>
+            <select value={f.fabric_type} onChange={(e) => pickFabric(e.target.value)}>
+              <option value="">Choose fabric</option>{opts(fabrics.data, (x) => x.fabric_type).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              <option value="Other">Other (type it in the order note)</option></select>
+            {fe.fabric_type && <small className="err">{fe.fabric_type}</small>}</label>
+          {f.fabric_type === 'Other' && field('fabric_type', 'Fabric type')}
+          {field('colour', 'Colour')}{field('qty_metres', 'Metres', 'number')}
           {field('price_per_metre', 'Price per metre', 'number')}{field('deadline', 'Deadline', 'date')}
         </div>
         <h3 className="sub">Yarn needed</h3>
         {reqs.map((r, i) => (
           <div className="fields row" key={i}>
-            <select value={r.material_id} onChange={(e) => setReqs(reqs.map((x, j) => (j === i ? { ...x, material_id: e.target.value } : x)))}>
-              <option value="">Material</option>{opts(mats.data).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
+            <select value={r.material_id} onChange={(e) => setReqs(reqs.map((x, j) => (j === i ? { ...x, material_id: e.target.value, blend_ratio: x.blend_ratio } : x)))}>
+              <option value="">Material</option>{opts(materialOptions).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>
             <input type="number" placeholder="kg" value={r.qty_required} onChange={(e) => setReqs(reqs.map((x, j) => (j === i ? { ...x, qty_required: e.target.value } : x)))} />
+            <input type="number" placeholder="Blend %" value={r.blend_ratio ?? ''} onChange={(e) => setReqs(reqs.map((x, j) => (j === i ? { ...x, blend_ratio: e.target.value } : x)))} />
           </div>))}
-        <button type="button" className="btn ghost" onClick={() => setReqs([...reqs, { material_id: '', qty_required: '' }])}>Add yarn line</button>
+        <button type="button" className="btn ghost" onClick={() => setReqs([...reqs, { material_id: '', qty_required: '', blend_ratio: '' }])}>Add yarn line</button>
         <div className="form-foot"><button className="btn" type="submit">Create order</button><Msg msg={msg} />
           {link && <span>Buyer link: <a href={link}>{link}</a></span>}</div>
       </form>}

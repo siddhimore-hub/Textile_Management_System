@@ -28,6 +28,15 @@ echo "18 roll over available should FAIL"; j POST /rolls '{"job_card_id":4,"metr
 echo "19 inspect: no defect on reject should FAIL"; j POST /rolls/1/inspect '{"result":"reject"}'
 echo "20 inspect pass";    j POST /rolls/1/inspect '{"result":"pass","inspector":"QC One"}'
 echo "21 dispatch";        j POST /dispatches '{"order_id":1,"roll_ids":[1],"vehicle_no":"TN09AB1234"}'
+echo "21b pending payments (no invoice yet)"; j GET /pending-payments
+echo "21c part then full payment raises the invoice"; j POST /payments '{"dispatch_id":1,"amount":40000}'; j POST /payments '{"dispatch_id":1,"amount":20000}'
+echo "21d invoice exists now"; j GET /invoices
+echo "21e ledger summary"; j GET /ledger/summary
+echo "21f add an expense"; j POST /expenses '{"category":"Power","amount":500,"description":"smoke"}'
+echo "21g add a machine";  j POST /machines '{"name":"Spin-02","stage":"spinning"}'
+echo "21h produce for stock"; j POST /stock-production '{"fabric_type":"cotton","colour":"white","qty_metres":200,"machine_id":1,"shift":"morning","requirements":[{"material_id":1,"qty_required":120}]}'
+echo "21i compatibility rules"; j GET /compatibility/fabrics
+echo "21j supplier yarn history"; j GET '/suppliers/material-history?supplier_id=1'
 echo "22 dispatch again should FAIL"; j POST /dispatches '{"order_id":1,"roll_ids":[1],"vehicle_no":"TN09AB1234"}'
 echo "23 orders (derived status)"; j GET /orders
 echo "24 dashboard";       j GET /dashboard

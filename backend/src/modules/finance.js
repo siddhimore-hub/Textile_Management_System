@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { db } from '../lib/db.js';
 import { validate, bad } from '../lib/http.js';
 import { orderProgress } from '../lib/orderStatus.js';
+import { dispatchDue, ensureInvoiceForDispatch } from '../lib/invoicing.js';
+import { notify } from '../lib/notify.js';
+import { publish } from '../lib/events.js';
 import { stockOf } from './inventory.js';
 
 const r = Router();
@@ -17,16 +20,36 @@ r.post('/costs', validate(z.object({
   res.status(201).json({ data: { id: info.lastInsertRowid } });
 });
 
-// Buyer payment against an invoice (cannot overpay).
-r.post('/payments', validate(z.object({ invoice_id: z.coerce.number().int().positive(), amount: z.coerce.number().positive() })), (req, res) => {
-  const inv = db.prepare('SELECT total, (SELECT COALESCE(SUM(amount),0) FROM payments WHERE invoice_id=invoices.id) paid FROM invoices WHERE id=?').get(req.body.invoice_id);
-  if (!inv) throw bad('Invoice not found');
-  if (req.body.amount > inv.total - inv.paid) throw bad(`Only ${inv.total - inv.paid} is outstanding`, 'OVERPAYMENT');
-  const info = db.prepare('INSERT INTO payments (invoice_id,amount) VALUES (?,?)').run(req.body.invoice_id, req.body.amount);
-  res.status(201).json({ data: { id: info.lastInsertRowid } });
+// Record a buyer payment against a dispatch. Partial payments are allowed; the total may never exceed
+// the amount due. The invoice is generated here only once the dispatch is fully paid (and never twice).
+r.post('/payments', validate(z.object({
+  invoice_id: z.coerce.number().int().positive().optional(),
+  dispatch_id: z.coerce.number().int().positive().optional(),
+  amount: z.coerce.number().positive(),
+}).refine((v) => v.invoice_id || v.dispatch_id, { message: 'Choose a dispatch', path: ['dispatch_id'] })), (req, res) => {
+  const b = req.body;
+  let dispatchId = b.dispatch_id;
+  if (!dispatchId) {
+    const inv = db.prepare('SELECT dispatch_id FROM invoices WHERE id=?').get(b.invoice_id);
+    if (!inv) throw bad('Invoice not found');
+    dispatchId = inv.dispatch_id;
+  }
+  const due = dispatchDue(dispatchId);
+  if (!due) throw bad('Dispatch not found');
+  if (b.amount > due.outstanding) throw bad(`Only ${due.outstanding} is outstanding`, 'OVERPAYMENT');
+  const existingInvoice = db.prepare('SELECT id FROM invoices WHERE dispatch_id=?').get(dispatchId);
+  const info = db.prepare('INSERT INTO payments (invoice_id,dispatch_id,amount) VALUES (?,?,?)')
+    .run(existingInvoice?.id ?? null, dispatchId, b.amount);
+  const { invoice_id, created } = ensureInvoiceForDispatch(dispatchId);
+  if (created) {
+    const orderId = db.prepare('SELECT order_id FROM dispatches WHERE id=?').get(dispatchId).order_id;
+    notify('invoice', `Invoice ${invoice_id} raised: ${due.total.toLocaleString('en-IN')} for order ${orderId}`, '/invoices', 'accounts,sales');
+  }
+  publish('dispatch');
+  res.status(201).json({ data: { id: info.lastInsertRowid, invoice_id, outstanding: dispatchDue(dispatchId).outstanding } });
 });
 r.get('/payments', (_q, res) => res.json({ data: db.prepare(
-  `SELECT p.id, p.invoice_id, p.amount, p.created_at FROM payments p ORDER BY p.id DESC`).all() }));
+  `SELECT p.id, p.invoice_id, p.dispatch_id, p.amount, p.created_at FROM payments p ORDER BY p.id DESC`).all() }));
 
 // Cost per order (basic): yarn issued is costed by cost_entries(kind=material) the accountant records.
 r.get('/finance/order-costs', (_q, res) => res.json({ data: db.prepare(
@@ -39,7 +62,7 @@ r.get('/finance/order-costs', (_q, res) => res.json({ data: db.prepare(
 r.get('/finance/summary', (req, res) => {
   const month = String(req.query.month || new Date().toISOString().slice(0, 7));
   const one = (sql, ...a) => db.prepare(sql).get(...a).v;
-  const billed = one("SELECT COALESCE(SUM(total),0) v FROM invoices WHERE substr(created_at,1,7)=?", month);
+  const billed = one("SELECT COALESCE(SUM(total),0) v FROM dispatches WHERE substr(created_at,1,7)=?", month);
   const received = one("SELECT COALESCE(SUM(amount),0) v FROM payments WHERE substr(created_at,1,7)=?", month);
   const costs = one("SELECT COALESCE(SUM(amount),0) v FROM cost_entries WHERE substr(created_at,1,7)=?", month);
   const wages = one("SELECT COALESCE(SUM(amount),0) v FROM wage_payouts WHERE month=?", month);
@@ -101,11 +124,13 @@ r.get('/dashboard/at-risk', (_q, res) => {
   res.json({ data: out.sort((a, b) => rank[a.risk] - rank[b.risk] || a.days_left - b.days_left) });
 });
 
-// Money still to collect, per buyer.
+// Money still to collect, per buyer. Based on dispatches (amounts due), not on invoices, so an unpaid
+// dispatch shows up as outstanding even though its invoice is not generated yet. Internal stock is excluded.
 r.get('/finance/receivables', (_q, res) => res.json({ data: db.prepare(
-  `SELECT b.id AS buyer_id, b.name AS buyer, COUNT(i.id) AS invoices, COALESCE(SUM(i.total),0) AS billed,
-     COALESCE(SUM((SELECT SUM(amount) FROM payments WHERE invoice_id=i.id)),0) AS paid
-   FROM buyers b JOIN orders o ON o.buyer_id=b.id JOIN dispatches d ON d.order_id=o.id JOIN invoices i ON i.dispatch_id=d.id
+  `SELECT b.id AS buyer_id, b.name AS buyer, COUNT(d.id) AS invoices, COALESCE(SUM(d.total),0) AS billed,
+     COALESCE(SUM((SELECT COALESCE(SUM(amount),0) FROM payments WHERE dispatch_id=d.id)),0) AS paid
+   FROM buyers b JOIN orders o ON o.buyer_id=b.id JOIN dispatches d ON d.order_id=o.id
+   WHERE o.is_internal=0
    GROUP BY b.id ORDER BY b.name`).all().map((x) => ({ ...x, outstanding: Math.round((x.billed - x.paid) * 100) / 100 })) }));
 
 export default r;

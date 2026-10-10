@@ -59,6 +59,37 @@ if (!tableSql('job_cards').includes("'finishing'")) {
 if (!hasCol('job_cards', 'source_job_id')) db.exec('ALTER TABLE job_cards ADD COLUMN source_job_id INTEGER REFERENCES job_cards(id)');
 db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_job_cards_source ON job_cards(source_job_id) WHERE source_job_id IS NOT NULL');
 
+// ---- Additive upgrades for older databases (records are never deleted) ----
+if (!hasCol('orders', 'is_internal')) db.exec('ALTER TABLE orders ADD COLUMN is_internal INTEGER NOT NULL DEFAULT 0');
+if (!hasCol('order_requirements', 'blend_ratio')) db.exec('ALTER TABLE order_requirements ADD COLUMN blend_ratio REAL');
+if (!hasCol('stock_movements', 'purchase_request_id')) db.exec('ALTER TABLE stock_movements ADD COLUMN purchase_request_id INTEGER');
+// A purchase request can only be received once, so its quantity can never be booked twice.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_receipt_pr ON stock_movements(purchase_request_id) WHERE purchase_request_id IS NOT NULL');
+// Dispatch amount due, so pending payments and invoices are driven by dispatches, not by invoices.
+if (!hasCol('dispatches', 'total')) {
+  db.exec('ALTER TABLE dispatches ADD COLUMN total REAL NOT NULL DEFAULT 0');
+  db.exec('UPDATE dispatches SET total = COALESCE((SELECT total FROM invoices WHERE invoices.dispatch_id=dispatches.id), 0)');
+}
+// Payments now reference a dispatch; invoice_id becomes optional (filled in when the invoice is generated).
+if (hasCol('payments', 'invoice_id') && !hasCol('payments', 'dispatch_id')) {
+  rebuild('payments',
+    `CREATE TABLE payments_new (
+       id INTEGER PRIMARY KEY, invoice_id INTEGER REFERENCES invoices(id),
+       dispatch_id INTEGER REFERENCES dispatches(id),
+       amount REAL NOT NULL CHECK (amount > 0), created_at TEXT DEFAULT CURRENT_TIMESTAMP)`,
+    `INSERT INTO payments_new (id,invoice_id,dispatch_id,amount,created_at)
+     SELECT p.id, p.invoice_id, (SELECT dispatch_id FROM invoices i WHERE i.id=p.invoice_id), p.amount, p.created_at FROM payments p`);
+}
+// Default (editable) fabric -> yarn compatibility. INSERT OR IGNORE keeps any user edits/additions.
+const COMPAT = [
+  ['cotton', 'cotton', null], ['linen', 'linen', null], ['polyester', 'polyester', null],
+  ['wool', 'wool', null], ['silk', 'silk', null],
+  ['cotton_polyester', 'cotton', 60], ['cotton_polyester', 'polyester', 40],
+  ['cotton_linen', 'cotton', 50], ['cotton_linen', 'linen', 50],
+];
+for (const [f, y, r] of COMPAT)
+  db.prepare('INSERT OR IGNORE INTO fabric_yarn_compatibility (fabric_type,yarn_type,blend_ratio) VALUES (?,?,?)').run(f, y, r);
+
 if (fresh) {
   db.exec(fs.readFileSync(path.join(root, 'seed.sql'), 'utf8'));
   console.log('Database created and seeded at', file);

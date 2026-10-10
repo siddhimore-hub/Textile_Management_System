@@ -3,14 +3,33 @@
 // A job card consumes the completed job of the previous stage (source_job_id) and never skips one.
 import { Router } from 'express';
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import { db } from '../lib/db.js';
-import { validate, bad, notFound } from '../lib/http.js';
+import { validate, bad, notFound, conflict } from '../lib/http.js';
+import { orderProgress } from '../lib/orderStatus.js';
+import { familiesOf, allowedFamilies } from '../lib/compatibility.js';
 import { publish } from '../lib/events.js';
 import { notify } from '../lib/notify.js';
 
 const r = Router();
 
 export const STAGES = ['spinning', 'weaving', 'dyeing', 'finishing'];
+const INTERNAL_BUYER = 'Internal Stock';
+// One shared "buyer" for stock production, so internal jobs use the normal order/roll pipeline.
+function internalBuyerId() {
+  const b = db.prepare('SELECT id FROM buyers WHERE name=?').get(INTERNAL_BUYER);
+  return b ? b.id : db.prepare('INSERT INTO buyers (name) VALUES (?)').run(INTERNAL_BUYER).lastInsertRowid;
+}
+function checkYarn(fabricType, requirements) {
+  const allowed = allowedFamilies(fabricType);
+  if (!allowed) return;
+  for (const q of requirements) {
+    const mat = db.prepare('SELECT name, yarn_type FROM materials WHERE id=?').get(q.material_id);
+    if (!mat) throw notFound('Material');
+    if (!familiesOf(mat.yarn_type).some((f) => allowed.includes(f)))
+      throw bad(`${mat.name} (${mat.yarn_type}) cannot make ${fabricType} fabric`, 'INCOMPATIBLE_YARN');
+  }
+}
 export const PREV_STAGE = { weaving: 'spinning', dyeing: 'weaving', finishing: 'dyeing' };
 const producedOf = (id) => db.prepare('SELECT COALESCE(SUM(metres),0) m FROM production_logs WHERE job_card_id=?').get(id).m;
 const rolledOf = (id) => db.prepare('SELECT COALESCE(SUM(metres),0) m FROM rolls WHERE job_card_id=?').get(id).m;
@@ -28,6 +47,19 @@ r.get('/machines', (_q, res) => {
   res.json({ data: rows });
 });
 
+// Add a machine to the floor.
+r.post('/machines', validate(z.object({
+  name: z.string().trim().min(2, 'Give the machine a name or number'),
+  stage: z.enum(STAGES),
+  status: z.enum(['running', 'idle', 'breakdown', 'maintenance']).default('idle'),
+})), (req, res) => {
+  const b = req.body;
+  if (db.prepare('SELECT 1 FROM machines WHERE lower(name)=lower(?)').get(b.name)) throw conflict(`${b.name} already exists`);
+  const info = db.prepare('INSERT INTO machines (name,stage,status) VALUES (?,?,?)').run(b.name, b.stage, b.status);
+  publish('machines');
+  res.status(201).json({ data: { id: info.lastInsertRowid } });
+});
+
 r.patch('/machines/:id/status', validate(z.object({ status: z.enum(['running', 'idle', 'breakdown', 'maintenance']) })), (req, res) => {
   const info = db.prepare('UPDATE machines SET status=? WHERE id=?').run(req.body.status, req.params.id);
   if (!info.changes) throw notFound('Machine');
@@ -39,7 +71,7 @@ r.patch('/machines/:id/status', validate(z.object({ status: z.enum(['running', '
 // Every job with its order details, output so far and what is still available for the next stage.
 r.get('/jobs', (_q, res) => {
   const rows = db.prepare(
-    `SELECT j.*, m.name AS machine, o.fabric_type, o.colour, b.name AS buyer,
+    `SELECT j.*, m.name AS machine, o.fabric_type, o.colour, o.is_internal, b.name AS buyer,
        (SELECT COALESCE(SUM(p.metres),0) FROM production_logs p WHERE p.job_card_id=j.id) AS produced_metres,
        (SELECT COUNT(*) FROM job_cards c WHERE c.source_job_id=j.id) AS child_count,
        (SELECT COALESCE(SUM(r.metres),0) FROM rolls r WHERE r.job_card_id=j.id) AS rolled_metres
@@ -54,7 +86,7 @@ r.get('/jobs/available', (req, res) => {
   const stage = String(req.query.stage || '');
   if (!STAGES.includes(stage)) throw bad('Unknown stage', 'BAD_STAGE');
   const rows = db.prepare(
-    `SELECT j.id, j.order_id, j.stage, j.machine_id, j.status, j.created_at,
+    `SELECT j.id, j.order_id, j.stage, j.machine_id, j.status, j.created_at, o.is_internal,
        m.name AS machine, o.fabric_type, o.colour, b.name AS buyer,
        (SELECT COALESCE(SUM(p.metres),0) FROM production_logs p WHERE p.job_card_id=j.id) AS produced_metres,
        (SELECT COALESCE(SUM(r.metres),0) FROM rolls r WHERE r.job_card_id=j.id) AS rolled_metres
@@ -83,7 +115,10 @@ r.post('/jobs', validate(z.object({
   let orderId; let sourceJobId = null;
   if (m.stage === 'spinning') {
     if (!b.order_id) throw bad('Choose an order for a spinning job', 'ORDER_REQUIRED');
-    if (!db.prepare('SELECT 1 FROM orders WHERE id=?').get(b.order_id)) throw notFound('Order');
+    const order = db.prepare('SELECT * FROM orders WHERE id=?').get(b.order_id);
+    if (!order) throw notFound('Order');
+    if (orderProgress(order.id).produced_metres >= order.qty_metres)
+      throw bad(`Order ${order.id} is already fully produced`, 'ORDER_COMPLETE');
     orderId = b.order_id;
   } else {
     const prev = PREV_STAGE[m.stage];
@@ -104,6 +139,38 @@ r.post('/jobs', validate(z.object({
   const id = tx();
   publish('machines'); publish('orders');
   res.status(201).json({ data: { id } });
+});
+
+// Produce for stock: manufacture extra fabric with no customer order. Creates an internal order
+// (buyer "Internal Stock", is_internal=1) plus a spinning job, so the normal stage -> QC -> finished
+// stock pipeline applies. Customer orders and stock jobs stay distinguishable by is_internal.
+r.post('/stock-production', validate(z.object({
+  fabric_type: z.string().trim().min(2), colour: z.string().trim().min(2),
+  qty_metres: z.coerce.number().positive('Metres must be more than 0'),
+  machine_id: z.coerce.number().int().positive(), shift: z.enum(['morning', 'evening', 'night']),
+  requirements: z.array(z.object({ material_id: z.coerce.number().int().positive(), qty_required: z.coerce.number().positive(), blend_ratio: z.coerce.number().positive().max(100).optional() })).default([]),
+})), (req, res) => {
+  const b = req.body;
+  const m = db.prepare('SELECT * FROM machines WHERE id=?').get(b.machine_id);
+  if (!m) throw notFound('Machine');
+  if (m.stage !== 'spinning') throw bad('Stock production starts on a spinning machine', 'WRONG_STAGE');
+  if (['breakdown', 'maintenance'].includes(m.status)) throw bad(`${m.name} is in ${m.status}`, 'MACHINE_UNAVAILABLE');
+  if (m.status === 'running') throw bad(`${m.name} already has a job`, 'MACHINE_BUSY');
+  checkYarn(b.fabric_type, b.requirements);
+  const buyerId = internalBuyerId(); const token = crypto.randomBytes(8).toString('hex');
+  const id = db.transaction(() => {
+    const order = db.prepare('INSERT INTO orders (buyer_id,fabric_type,colour,qty_metres,price_per_metre,deadline,is_internal,tracking_token) VALUES (?,?,?,?,0,date(\'now\'),1,?)')
+      .run(buyerId, b.fabric_type, b.colour, b.qty_metres, token);
+    for (const q of b.requirements)
+      db.prepare('INSERT INTO order_requirements (order_id,material_id,qty_required,blend_ratio) VALUES (?,?,?,?)')
+        .run(order.lastInsertRowid, q.material_id, q.qty_required, q.blend_ratio ?? null);
+    const job = db.prepare("INSERT INTO job_cards (order_id,machine_id,stage,shift,source_job_id) VALUES (?,?, 'spinning', ?, NULL)")
+      .run(order.lastInsertRowid, m.id, b.shift);
+    db.prepare("UPDATE machines SET status='running' WHERE id=?").run(m.id);
+    return { order_id: order.lastInsertRowid, job_id: job.lastInsertRowid };
+  })();
+  publish('machines'); publish('orders');
+  res.status(201).json({ data: id });
 });
 
 // Log output (metres) against a job.

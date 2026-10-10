@@ -1,7 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import Flow from './pages/Flow.jsx';
 import Track from './pages/Track.jsx';
 import Login from './pages/Login.jsx';
 import ModulePage from './pages/ModulePage.jsx';
@@ -15,6 +14,10 @@ import RollLabels from './pages/RollLabels.jsx';
 import Scan from './pages/Scan.jsx';
 import Finished from './pages/Finished.jsx';
 import Invoices from './pages/Invoices.jsx';
+import PendingPayments from './pages/PendingPayments.jsx';
+import IncomeExpenses from './pages/IncomeExpenses.jsx';
+import SupplierHistory from './pages/SupplierHistory.jsx';
+import Compatibility from './pages/Compatibility.jsx';
 import Attendance from './pages/Attendance.jsx';
 import Payroll from './pages/Payroll.jsx';
 import Costs from './pages/Costs.jsx';
@@ -26,8 +29,9 @@ import AuditLog from './pages/AuditLog.jsx';
 // Custom pages replace the generic list. Remove an entry to fall back to ModulePage.
 const custom = {
   '/orders': Orders, '/machines': Machines, '/spinning': Spinning, '/loom': Loom, '/dyeing': Dyeing, '/finishing': FinishingStage,
-  '/rolls': Rolls, '/finished': Finished, '/invoices': Invoices, '/attendance': Attendance,
-  '/payroll': Payroll, '/costs': Costs, '/parties': Parties, '/purchase-requests': PurchaseRequests, '/users': Users, '/audit': AuditLog,
+  '/rolls': Rolls, '/finished': Finished, '/invoices': Invoices, '/pending-payments': PendingPayments, '/attendance': Attendance,
+  '/payroll': Payroll, '/costs': Costs, '/income-expenses': IncomeExpenses, '/supplier-history': SupplierHistory, '/compatibility': Compatibility,
+  '/parties': Parties, '/purchase-requests': PurchaseRequests, '/users': Users, '/audit': AuditLog,
 };
 
 // Everything except the buyer tracking page and login needs a logged-in user.
@@ -50,7 +54,6 @@ export default function App() {
       <Route path="/labels" element={<RequireAuth><RollLabels /></RequireAuth>} />
       <Route element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<Dashboard />} />
-        <Route path="flow" element={<Flow />} />
         <Route path="scan/:code" element={<Scan />} />
         {ALL_ITEMS.filter((i) => i.endpoint).map((i) => {
           const C = custom[i.path];

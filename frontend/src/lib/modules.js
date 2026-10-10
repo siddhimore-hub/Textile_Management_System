@@ -3,7 +3,6 @@
 export const NAV = [
   { group: 'Overview', items: [
     { path: '/', label: 'Dashboard', owner: 'M4' },
-    { path: '/flow', label: 'Process flow', owner: 'All' },
   ] },
   { group: 'Orders and stock', items: [
     { path: '/orders', roles: ['sales','store','supervisor','accounts'], label: 'Orders', owner: 'M1', endpoint: '/orders', live: ['orders'],
@@ -13,6 +12,8 @@ export const NAV = [
     { path: '/parties', label: 'Buyers and suppliers', owner: 'M1', roles: ['sales', 'store', 'accounts'], endpoint: '/buyers', live: [], columns: [] },
     { path: '/stock', roles: ['store','supervisor','accounts','sales'], label: 'Raw material stock', owner: 'M1', endpoint: '/stock', live: ['stock'], form: 'stock',
       columns: [['name', 'Material'], ['on_hand', 'On hand'], ['reserved', 'Reserved'], ['available', 'Available'], ['reorder_level', 'Reorder at'], ['low', 'Low?']] },
+    { path: '/supplier-history', roles: ['store','accounts'], label: 'Supplier yarn history', owner: 'M1', endpoint: '/suppliers/material-history', live: ['stock'], columns: [] },
+    { path: '/compatibility', roles: ['store'], label: 'Fabric and yarn rules', owner: 'M1', endpoint: '/compatibility', live: ['compatibility', 'materials'], columns: [] },
   ] },
   { group: 'Production', items: [
     { path: '/machines', roles: ['supervisor'], label: 'Machines', owner: 'M2', endpoint: '/machines', live: ['machines'],
@@ -34,6 +35,10 @@ export const NAV = [
       columns: [['id', 'No.'], ['buyer', 'Buyer'], ['order_id', 'Order'], ['rolls', 'Rolls'], ['vehicle_no', 'Vehicle'], ['total', 'Invoice total']] },
     { path: '/invoices', roles: ['sales','accounts'], label: 'Invoices', owner: 'M3', endpoint: '/invoices', live: ['dispatch'],
       columns: [['id', 'Invoice'], ['buyer', 'Buyer'], ['order_id', 'Order'], ['total', 'Total'], ['paid', 'Paid']] },
+    { path: '/pending-payments', roles: ['accounts','sales'], label: 'Pending payments', owner: 'M3', endpoint: '/pending-payments', live: ['dispatch'], columns: [] },
+  ] },
+  { group: 'Income and expenses', items: [
+    { path: '/income-expenses', roles: ['accounts'], label: 'Income and expenses', owner: 'M4', endpoint: '/ledger/summary', live: ['stock', 'dispatch', 'ledger'], columns: [] },
   ] },
   { group: 'People and money', items: [
     { path: '/attendance', roles: ['supervisor','accounts'], label: 'Attendance', owner: 'M4', endpoint: '/attendance', hint: 'Mark present, absent or half day (POST /attendance).',

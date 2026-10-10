@@ -27,9 +27,18 @@ test('full flow: receive, order, issue, produce through every stage, inspect, di
   assert.equal((await call('/orders')).data.find((x) => x.id === o.id).status, 'ready_to_ship');
   const d = await call('/dispatches', { role: 'sales', method: 'POST', body: { order_id: o.id, roll_ids: [roll.data.id], vehicle_no: 'tn09ab1234' } });
   assert.equal(d.data.total, 10000);
+  assert.equal(d.data.invoice_id, undefined); // no invoice at dispatch time
   assert.equal((await call('/dispatches', { role: 'sales', method: 'POST', body: { order_id: o.id, roll_ids: [roll.data.id], vehicle_no: 'TN09AB1234' } })).error.code, 'ALREADY_DISPATCHED');
-  assert.equal((await call('/payments', { role: 'accounts', method: 'POST', body: { invoice_id: d.data.invoice_id, amount: 20000 } })).error.code, 'OVERPAYMENT');
-  assert.equal((await call('/payments', { role: 'accounts', method: 'POST', body: { invoice_id: d.data.invoice_id, amount: 4000 } })).status, 201);
+  assert.equal((await call('/payments', { role: 'accounts', method: 'POST', body: { dispatch_id: d.data.dispatch_id, amount: 20000 } })).error.code, 'OVERPAYMENT');
+  // A part payment leaves the dispatch pending and raises no invoice.
+  const partial = await call('/payments', { role: 'accounts', method: 'POST', body: { dispatch_id: d.data.dispatch_id, amount: 4000 } });
+  assert.equal(partial.status, 201); assert.equal(partial.data.invoice_id, null);
+  const pending = (await call('/pending-payments', { role: 'accounts' })).data.find((x) => x.id === d.data.dispatch_id);
+  assert.equal(pending.outstanding, 6000); assert.equal(pending.status, 'partial'); assert.equal(pending.invoice_id, null);
+  // Paying the rest raises the invoice exactly once.
+  const done = await call('/payments', { role: 'accounts', method: 'POST', body: { dispatch_id: d.data.dispatch_id, amount: 6000 } });
+  assert.equal(done.status, 201); assert.ok(done.data.invoice_id); assert.equal(done.data.outstanding, 0);
+  assert.ok((await call('/invoices', { role: 'accounts' })).data.some((i) => i.id === done.data.invoice_id));
   assert.equal((await call('/orders')).data.find((x) => x.id === o.id).status, 'dispatched');
 });
 

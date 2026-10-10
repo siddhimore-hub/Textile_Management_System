@@ -55,8 +55,8 @@ r.patch('/purchase-requests/:id/status', validate(z.object({
   db.transaction(() => {
     db.prepare('UPDATE purchase_requests SET status=?, supplier_id=? WHERE id=?').run(b.status, supplier ?? null, p.id);
     if (b.status === 'received')
-      db.prepare("INSERT INTO stock_movements (material_id,kind,qty,supplier_id,lot_no,note) VALUES (?, 'receipt', ?, ?, ?, ?)")
-        .run(p.material_id, p.qty, supplier, b.lot_no, `Purchase request ${p.id}`);
+      db.prepare("INSERT INTO stock_movements (material_id,kind,qty,supplier_id,lot_no,note,purchase_request_id) VALUES (?, 'receipt', ?, ?, ?, ?, ?)")
+        .run(p.material_id, p.qty, supplier, b.lot_no, `Purchase request ${p.id}`, p.id);
   })();
   publish('purchasing'); if (b.status === 'received') publish('stock');
   res.json({ data: { ok: true } });

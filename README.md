@@ -22,11 +22,11 @@ Reset data any time: `npm run db:reset`.
 ## Layout
 ```
 db/                schema.sql + seed.sql (SQLite)         shared, change via PR only
-backend/src/lib/   db, http (validation/errors), events (live updates), orderStatus
-backend/src/modules/  inventory, orders (M1) | production, qc (M2) | dispatch (M3) | workforce, finance (M4)
+backend/src/lib/   db, http (validation/errors), events (live updates), orderStatus, invoicing, compatibility
+backend/src/modules/  inventory, orders, compatibility (M1) | production, qc (M2) | dispatch (M3) | workforce, finance, ledger (M4)
 frontend/src/lib/  api.js (fetch + live hook), modules.js (menu + list pages)
 frontend/src/components/  Layout (sidebar + navbar), DataTable, EntryForm
-frontend/src/pages/       Dashboard, Flow, Track (public), ModulePage
+frontend/src/pages/       Dashboard, Track (public), ModulePage + custom pages (Machines, Orders, PendingPayments, IncomeExpenses, ...)
 docs/              api-contract, work-distribution, prompts for each member
 scripts/smoke.sh   end-to-end flow check
 ```

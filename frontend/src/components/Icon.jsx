@@ -34,10 +34,10 @@ const PATHS = {
 };
 // Which icon belongs to which menu page (menu itself stays defined in lib/modules.js).
 export const PAGE_ICON = {
-  '/': 'home', '/flow': 'flow', '/orders': 'clipboard', '/purchase-requests': 'cart', '/parties': 'users', '/stock': 'box', '/machines': 'cog',
-  '/spinning': 'spool', '/loom': 'weave', '/dyeing': 'drop', '/finishing': 'check',
-  '/rolls': 'shield', '/finished': 'cube', '/dispatches': 'truck', '/invoices': 'receipt', '/attendance': 'calendar', '/payroll': 'wallet',
-  '/costs': 'chart', '/users': 'users', '/audit': 'list',
+  '/': 'home', '/orders': 'clipboard', '/purchase-requests': 'cart', '/parties': 'users', '/stock': 'box', '/supplier-history': 'list', '/compatibility': 'yarn',
+  '/machines': 'cog', '/spinning': 'spool', '/loom': 'weave', '/dyeing': 'drop', '/finishing': 'check',
+  '/rolls': 'shield', '/finished': 'cube', '/dispatches': 'truck', '/invoices': 'receipt', '/pending-payments': 'wallet', '/attendance': 'calendar', '/payroll': 'wallet',
+  '/costs': 'chart', '/income-expenses': 'chart', '/users': 'users', '/audit': 'list',
 };
 
 export default function Icon({ name, className = '' }) {

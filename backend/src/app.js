@@ -10,11 +10,13 @@ import { audit } from './lib/audit.js';
 import inventory from './modules/inventory.js';
 import purchasing from './modules/purchasing.js';
 import orders from './modules/orders.js';
+import compatibility from './modules/compatibility.js';
 import production from './modules/production.js';
 import qc from './modules/qc.js';
 import dispatch from './modules/dispatch.js';
 import workforce from './modules/workforce.js';
 import finance from './modules/finance.js';
+import ledger from './modules/ledger.js';
 import auth from './modules/auth.js';
 import notifications from './modules/notifications.js';
 
@@ -27,6 +29,6 @@ app.use('/api', guard, idempotency, audit);
 app.get('/api/health', (_q, res) => res.json({ data: { ok: true } }));
 app.get('/api/events', sseHandler);
 // Each member mounts only their own module(s) below.
-for (const m of [auth, notifications, inventory, purchasing, orders, production, qc, dispatch, workforce, finance]) app.use('/api', m);
+for (const m of [auth, notifications, inventory, purchasing, orders, compatibility, production, qc, dispatch, workforce, finance, ledger]) app.use('/api', m);
 app.use('/api', (_q, res) => res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Unknown endpoint' } }));
 app.use(errorHandler);

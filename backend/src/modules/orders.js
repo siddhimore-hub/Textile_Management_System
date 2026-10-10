@@ -3,12 +3,30 @@ import { Router } from 'express';
 import { z } from 'zod';
 import crypto from 'node:crypto';
 import { db } from '../lib/db.js';
-import { validate, notFound } from '../lib/http.js';
+import { validate, bad, notFound } from '../lib/http.js';
 import { orderProgress } from '../lib/orderStatus.js';
 import { stockOf } from './inventory.js';
+import { allowedFamilies, familiesOf } from '../lib/compatibility.js';
 import { publish } from '../lib/events.js';
 
 const r = Router();
+
+// Every yarn line must be a fibre the fabric can be made from. Unknown fabric = no rule yet, so allow.
+function checkYarnCompatibility(fabricType, requirements) {
+  const allowed = allowedFamilies(fabricType);
+  if (!allowed) return;
+  for (const q of requirements) {
+    const mat = db.prepare('SELECT name, yarn_type FROM materials WHERE id=?').get(q.material_id);
+    if (!mat) throw notFound('Material');
+    if (!familiesOf(mat.yarn_type).some((f) => allowed.includes(f)))
+      throw bad(`${mat.name} (${mat.yarn_type}) cannot make ${fabricType} fabric`, 'INCOMPATIBLE_YARN');
+  }
+  if (allowed.length > 1) {
+    const ratios = requirements.map((q) => q.blend_ratio).filter((x) => x != null);
+    if (ratios.length && Math.abs(ratios.reduce((a, b) => a + b, 0) - 100) > 1)
+      throw bad('Blend ratios must add up to 100%', 'BAD_BLEND_RATIO');
+  }
+}
 
 r.get('/buyers', (_q, res) => res.json({ data: db.prepare('SELECT * FROM buyers ORDER BY name').all() }));
 r.post('/buyers', validate(z.object({
@@ -30,20 +48,31 @@ r.post('/orders', validate(z.object({
   buyer_id: z.coerce.number().int().positive(), fabric_type: z.string().trim().min(2), colour: z.string().trim().min(2),
   qty_metres: z.coerce.number().positive(), price_per_metre: z.coerce.number().min(0),
   deadline: z.string().refine((d) => !Number.isNaN(Date.parse(d)) && new Date(d) >= new Date(new Date().toDateString()), 'Deadline cannot be in the past'),
-  requirements: z.array(z.object({ material_id: z.coerce.number().int().positive(), qty_required: z.coerce.number().positive() })).default([]),
+  requirements: z.array(z.object({ material_id: z.coerce.number().int().positive(), qty_required: z.coerce.number().positive(), blend_ratio: z.coerce.number().positive().max(100).optional() })).default([]),
 })), (req, res) => {
   const b = req.body;
+  checkYarnCompatibility(b.fabric_type, b.requirements);
   const token = crypto.randomBytes(8).toString('hex');
   const tx = db.transaction(() => {
     const info = db.prepare('INSERT INTO orders (buyer_id,fabric_type,colour,qty_metres,price_per_metre,deadline,tracking_token) VALUES (?,?,?,?,?,?,?)')
       .run(b.buyer_id, b.fabric_type, b.colour, b.qty_metres, b.price_per_metre, b.deadline, token);
     for (const q of b.requirements)
-      db.prepare('INSERT INTO order_requirements (order_id,material_id,qty_required) VALUES (?,?,?)').run(info.lastInsertRowid, q.material_id, q.qty_required);
+      db.prepare('INSERT INTO order_requirements (order_id,material_id,qty_required,blend_ratio) VALUES (?,?,?,?)').run(info.lastInsertRowid, q.material_id, q.qty_required, q.blend_ratio ?? null);
     return info.lastInsertRowid;
   });
   const id = tx();
   publish('orders');
   res.status(201).json({ data: { id, tracking_token: token } });
+});
+
+// Customer orders that still need production. Fully completed and dispatched orders are left out,
+// and internal stock-production orders never appear here (they are made from the stock-production form).
+r.get('/orders/assignable', (_q, res) => {
+  const rows = db.prepare(`SELECT o.*, b.name AS buyer FROM orders o JOIN buyers b ON b.id=o.buyer_id
+    WHERE o.is_internal=0 ORDER BY o.id DESC`).all()
+    .map((o) => ({ ...o, ...orderProgress(o.id) }))
+    .filter((o) => o.status !== 'dispatched' && o.produced_metres < o.qty_metres);
+  res.json({ data: rows });
 });
 
 // Can we start this order? Compares requirement vs on-hand stock.

@@ -31,18 +31,28 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   kind TEXT NOT NULL CHECK (kind IN ('receipt','issue','return','adjust')),
   qty REAL NOT NULL, supplier_id INTEGER REFERENCES suppliers(id),
   order_id INTEGER REFERENCES orders(id), lot_no TEXT, note TEXT,
+  purchase_request_id INTEGER REFERENCES purchase_requests(id),
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY, buyer_id INTEGER NOT NULL REFERENCES buyers(id),
   fabric_type TEXT NOT NULL, colour TEXT NOT NULL, qty_metres REAL NOT NULL CHECK (qty_metres > 0),
   price_per_metre REAL NOT NULL CHECK (price_per_metre >= 0), deadline TEXT NOT NULL,
+  is_internal INTEGER NOT NULL DEFAULT 0, -- 1 = stock production with no customer order
   tracking_token TEXT UNIQUE NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
   -- NOTE: no status column. Status is DERIVED (see backend/src/lib/orderStatus.js)
 );
 CREATE TABLE IF NOT EXISTS order_requirements (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
-  material_id INTEGER NOT NULL REFERENCES materials(id), qty_required REAL NOT NULL CHECK (qty_required > 0)
+  material_id INTEGER NOT NULL REFERENCES materials(id), qty_required REAL NOT NULL CHECK (qty_required > 0),
+  blend_ratio REAL -- % of this yarn in a blend, optional
+);
+-- Which yarn families can make which fabric (editable in the app). yarn_type is a fibre family
+-- (cotton, linen, polyester, ...) matched against materials.yarn_type.
+CREATE TABLE IF NOT EXISTS fabric_yarn_compatibility (
+  id INTEGER PRIMARY KEY, fabric_type TEXT NOT NULL, yarn_type TEXT NOT NULL,
+  blend_ratio REAL, note TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (fabric_type, yarn_type)
 );
 
 -- ===== M2 : PRODUCTION + QC =====
@@ -85,14 +95,18 @@ CREATE TABLE IF NOT EXISTS qc_inspections (
 -- ===== M3 : DISPATCH + INVOICE =====
 CREATE TABLE IF NOT EXISTS dispatches (
   id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id),
-  vehicle_no TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  vehicle_no TEXT NOT NULL, total REAL NOT NULL DEFAULT 0, -- amount due for this dispatch
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- An invoice is only created once the whole amount due for a dispatch is received (see lib/invoicing.js).
 CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY, dispatch_id INTEGER UNIQUE NOT NULL REFERENCES dispatches(id),
   total REAL NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+-- Payment receipts are recorded against a dispatch (invoice_id fills in once the invoice is generated).
 CREATE TABLE IF NOT EXISTS payments (
-  id INTEGER PRIMARY KEY, invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+  id INTEGER PRIMARY KEY, invoice_id INTEGER REFERENCES invoices(id),
+  dispatch_id INTEGER REFERENCES dispatches(id),
   amount REAL NOT NULL CHECK (amount > 0), created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -115,6 +129,13 @@ CREATE TABLE IF NOT EXISTS cost_entries (
   id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id),
   kind TEXT NOT NULL CHECK (kind IN ('material','labour','overhead','supplier_bill')),
   amount REAL NOT NULL CHECK (amount >= 0), note TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+-- General business expenses (rent, power, ...). Kept apart from production/order costs (cost_entries)
+-- and from supplier purchase records (stock_movements) so nothing is counted twice.
+CREATE TABLE IF NOT EXISTS expenses (
+  id INTEGER PRIMARY KEY, category TEXT NOT NULL, description TEXT,
+  amount REAL NOT NULL CHECK (amount >= 0), expense_date TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ===== PLATFORM (added: auth, notifications, purchasing, offline replay) =====

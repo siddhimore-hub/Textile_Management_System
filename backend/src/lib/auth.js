@@ -34,20 +34,22 @@ const PUBLIC = [['GET', /^\/health$/], ['POST', /^\/auth\/login$/], ['GET', /^\/
 // First match wins. Owner passes every rule. A path with no write rule is owner-only.
 const READ_RULES = [
   [/^\/(users|audit-logs)(\/|$)/, ['owner']],
-  [/^\/(finance|payroll|payments)(\/|$)/, ['accounts']],
+  [/^\/suppliers\/material-history$/, ['store', 'accounts']],
+  [/^\/(finance|payroll|payments|ledger)(\/|$)/, ['accounts']],
   [/^\/invoices(\/|$)/, ['accounts', 'sales']],
+  [/^\/pending-payments(\/|$)/, ['accounts', 'sales']],
 ];
 const EVERYONE = ['store', 'supervisor', 'qc', 'sales', 'accounts'];
 const WRITE_RULES = [
   [/^\/(auth|notifications)(\/|$)/, EVERYONE],
   [/^\/stock\/issue$/, ['store', 'sales']],
-  [/^\/(materials|suppliers|receipts|purchase-requests)(\/|$)/, ['store']],
+  [/^\/(materials|suppliers|receipts|purchase-requests|compatibility)(\/|$)/, ['store']],
   [/^\/(buyers|orders|dispatches)(\/|$)/, ['sales']],
-  [/^\/(jobs|machines)(\/|$)/, ['supervisor']],
+  [/^\/(jobs|machines|stock-production)(\/|$)/, ['supervisor']],
   [/^\/rolls\/\d+\/inspect$/, ['qc']],
   [/^\/rolls(\/|$)/, ['supervisor']],
   [/^\/(attendance|workers)(\/|$)/, ['supervisor', 'accounts']],
-  [/^\/(payments|costs|payroll)(\/|$)/, ['accounts']],
+  [/^\/(payments|costs|payroll|expenses)(\/|$)/, ['accounts']],
 ];
 export const allowedRoles = (method, path) => {
   const rules = method === 'GET' || method === 'HEAD' ? READ_RULES : WRITE_RULES;

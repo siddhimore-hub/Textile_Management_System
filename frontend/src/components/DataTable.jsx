@@ -1,6 +1,6 @@
 const LABELS = { in_qc: 'quality check', ready_to_ship: 'ready to ship', confirmed: 'not started' };
 const label = (v) => (typeof v === 'string' ? (LABELS[v] ?? v.replaceAll('_', ' ')) : v);
-const tone = { pass: 'ok', running: 'ok', dispatched: 'ok', ready_to_ship: 'ok', reject: 'bad', breakdown: 'bad', maintenance: 'warn', rework: 'warn', pending: 'warn', in_qc: 'warn', idle: 'muted', confirmed: 'muted', in_production: 'info' };
+const tone = { pass: 'ok', running: 'ok', dispatched: 'ok', ready_to_ship: 'ok', paid: 'ok', reject: 'bad', breakdown: 'bad', maintenance: 'warn', rework: 'warn', pending: 'warn', partial: 'warn', in_qc: 'warn', idle: 'muted', confirmed: 'muted', in_production: 'info' };
 
 export function Pill({ v }) { return <span className={`pill ${tone[v] || 'muted'}`}>{label(v)}</span>; }
 

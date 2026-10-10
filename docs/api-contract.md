@@ -17,25 +17,42 @@ Owner updates their section in the same PR that changes an endpoint.
 - GET `/orders/:id/feasibility` -> {can_start, lines:[{name,qty_required,on_hand,shortfall}]}
 
 ## M2 Production and QC
-- GET `/machines` (with job_id, order_id, today_metres) | PATCH `/machines/:id/status` {status}
-- GET `/jobs` (each with produced_metres, available_metres, stage, source_job_id) | GET `/jobs/available?stage=spinning|weaving|dyeing|finishing` -> material from completed jobs not yet consumed
-- POST `/jobs` {machine_id, shift, order_id? (spinning only), source_job_id? (weaving/dyeing/finishing)} (400 if machine broken/busy; weaving/dyeing/finishing require the completed previous-stage batch, once)
+- GET `/machines` (with job_id, order_id, is_internal, today_metres) | POST `/machines` {name (unique), stage, status?} -> 409 CONFLICT if the name exists | PATCH `/machines/:id/status` {status}
+- POST `/stock-production` {fabric_type, colour, qty_metres>0, machine_id (free *spinning* machine), shift, requirements:[{material_id,qty_required,blend_ratio?}]} -> {order_id, job_id}. Creates an internal order (buyer "Internal Stock", is_internal=1) + a spinning job. 400 `MACHINE_BUSY`/`WRONG_STAGE`/`INCOMPATIBLE_YARN`.
+- GET `/orders/assignable` -> customer orders not dispatched and not yet fully produced (internal stock orders are excluded)
+- POST `/jobs` {machine_id, shift, order_id? (spinning only), source_job_id? (weaving/dyeing/finishing)}. Spinning refuses an order whose full quantity is already rolled (400 `ORDER_COMPLETE`). Other 400s if machine broken/busy; weaving/dyeing/finishing require the completed previous-stage batch, once.
+- GET `/jobs` (each with produced_metres, available_metres, stage, source_job_id, order_is_internal) | GET `/jobs/available?stage=spinning|weaving|dyeing|finishing` -> material from completed jobs not yet consumed
 - POST `/jobs/:id/output` {metres>0} | POST `/jobs/:id/finish`
 - GET `/rolls?qc_status=` | POST `/rolls` {job_card_id (must be a *completed finishing* job), metres>0} -> {id, code} (400 `EXCEEDS_AVAILABLE` if metres > finished batch left)
 - POST `/rolls/:id/inspect` {result: pass|rework|reject, defect_type? (required unless pass), notes?, inspector?}
 - GET `/qc/defects` -> counts by machine and defect
 
 ## M3 Dispatch and Buyer tracking
-- GET `/finished-stock` | GET `/dispatches` | GET `/invoices`
-- POST `/dispatches` {order_id, roll_ids[], vehicle_no like TN09AB1234} -> {dispatch_id, invoice_id, total}
+- GET `/finished-stock` | GET `/dispatches` (each with `total` = amount due, `paid`, `invoice_id` when raised)
+- POST `/dispatches` {order_id, roll_ids[], vehicle_no like TN09AB1234} -> {dispatch_id, total}. **No invoice here**: the amount due is stored on the dispatch.
+- GET `/pending-payments` -> every dispatch with `total, paid, outstanding, status: pending|partial|paid, invoice_id, payments:[{amount,created_at}]` (accounts, sales)
+- GET `/invoices` -> only fully paid dispatches (invoice 1 per dispatch)
 - GET `/track/:token` (public) -> order, status, percent
+
+## Fabric - yarn compatibility (M1)
+- GET `/compatibility/fabrics` -> [{fabric_type, yarns:[{yarn_type, blend_ratio}], is_blend}] (drives the fabric + yarn dropdowns)
+- GET `/compatibility/materials?fabric_type=` -> materials that suit the fabric (fabric with no rule = all materials)
+- GET `/compatibility` -> rule rows | POST `/compatibility` {fabric_type, yarn_type, blend_ratio?, note?} (store) | DELETE `/compatibility/:id`
+- POST `/orders` validates each yarn line: incompatible yarn -> 400 `INCOMPATIBLE_YARN`; a multi-family blend whose ratios don't sum to ~100% -> 400 `BAD_BLEND_RATIO`. `requirements[].blend_ratio` is stored. `/stock/issue` also refuses incompatible yarn.
 
 ## M4 People and Money
 - GET/POST `/workers` {name, daily_wage}
 - GET `/attendance?date=` | POST `/attendance` {worker_id, work_date, status}
 - POST `/payroll/run` {month YYYY-MM} | GET `/payroll?month=`
-- POST `/costs` {order_id?, kind, amount>0, note?} | POST `/payments` {invoice_id, amount>0}
-- GET `/payments` | GET `/finance/order-costs` | GET `/finance/summary?month=` | GET `/dashboard`
+- POST `/costs` {order_id?, kind, amount>0, note?}
+- POST `/payments` {dispatch_id or invoice_id, amount>0} -> {id, invoice_id, outstanding}. Partial payment allowed; total can never exceed the dispatch amount due (400 `OVERPAYMENT`). The invoice (unique per dispatch) is raised automatically the moment the last rupee arrives.
+- GET `/payments` (with dispatch_id) | GET `/finance/order-costs` | GET `/finance/summary?month=` (billed from `dispatches.total`) | GET `/dashboard`
+- GET `/finance/receivables` (per buyer, based on dispatches; internal stock orders excluded)
+- GET `/ledger/summary?from=&to=` -> {income (payments received), expenses (cost_entries + expenses), profit} | GET `/ledger/income?from=&to=` | GET `/ledger/expenses?from=&to=&category=`
+- POST `/expenses` {category, description?, amount>0, expense_date?(YYYY-MM-DD)} -> general business expense (accounts). Production costs keep using `/costs`.
+
+## Supplier yarn history (M1 / M4)
+- GET `/suppliers/material-history?supplier_id=` (store, accounts) -> per supplier: deliveries, total delivered kg, `by_yarn` totals, and `receipts` with FIFO `remaining_kg` per lot (received minus issued, first lot first).
 
 ## Login, roles, audit (M4)
 Every `/api` call except `GET /health`, `POST /auth/login` and `GET /track/:token` needs `Authorization: Bearer <token>`
@@ -43,7 +60,7 @@ Every `/api` call except `GET /health`, `POST /auth/login` and `GET /track/:toke
 - POST `/auth/login` {email, password} -> {token, user:{id,name,email,role}} (5 wrong tries in 10 minutes -> 429) | POST `/auth/logout` | GET `/auth/me` | POST `/auth/password` {current, next>=8 chars} (logs out other devices)
 - GET/POST `/users` {name, email, role, password>=8} | PATCH `/users/:id` {role?, active?, password?} (owner only; cannot switch yourself off)
 - GET `/audit-logs?actor=&limit=` (owner only). Every successful POST/PATCH is written automatically (who, `METHOD /path`, area, record id), plus logins and failed logins.
-- Roles: owner (all), store (materials, suppliers, receipts, issue yarn, purchase requests), sales (buyers, orders, dispatches, issue yarn), supervisor (machines, jobs, rolls, attendance), qc (inspections), accounts (payments, costs, payroll, workers, attendance). Rules live in one table: `backend/src/lib/auth.js`.
+- Roles: owner (all), store (materials, suppliers, receipts, issue yarn, purchase requests, compatibility rules, supplier history), sales (buyers, orders, dispatches, pending payments), supervisor (machines, jobs including stock-production, rolls, attendance), qc (inspections), accounts (payments, costs, expenses, payroll, workers, attendance, ledger, pending payments). Rules live in one table: `backend/src/lib/auth.js`.
 
 ## Purchasing and notifications (M1 / M3)
 - GET `/purchase-requests` | GET `/purchase-requests/suggestions` (low stock, no open request, suggested_qty) | POST `/purchase-requests` {material_id, qty>0, supplier_id?, note?}
