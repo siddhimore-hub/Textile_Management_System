@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth.jsx';
-import Brand from '../components/Brand.jsx';
+import { Logo } from '../components/Brand.jsx';
 import Icon from '../components/Icon.jsx';
 import Msg from '../components/Msg.jsx';
 
@@ -17,22 +17,41 @@ export default function Login() {
   }
   return (
     <div className="login-page">
-      <form className="login-card form" onSubmit={submit}>
-        <Brand dark />
-        <h2>Log in</h2>
-        <div className="fields one">
-          <label><span>Email</span><input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus /></label>
-          <label><span>Password</span>
-            <span className="pw-field">
-              <input type={show ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <button type="button" className="pw-toggle" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show} title={show ? 'Hide password' : 'Show password'}>
-                <Icon name={show ? 'eyeOff' : 'eye'} />
-              </button>
-            </span>
-          </label>
+      <section className="login-brand" aria-label="Everest Textile Mills">
+        <div className="login-brand-inner">
+          <Logo />
+          <h1>Everest Textile Mills</h1>
+          <p className="login-sub">Manufacturing Management System</p>
+          <hr />
+          <p className="login-tagline">Weaving Progress,<br />Stitching a Better Tomorrow</p>
         </div>
-        <div className="form-foot"><button className="btn" type="submit" disabled={busy}>{busy ? 'Logging in' : 'Log in'}</button><Msg msg={msg} /></div>
-      </form>
+        <ul className="login-values">
+          <li><Icon name="leaf" /><span>Quality<br />Production</span></li>
+          <li><Icon name="cog" /><span>Efficient<br />Management</span></li>
+          <li><Icon name="growth" /><span>Sustainable<br />Growth</span></li>
+        </ul>
+      </section>
+      <div className="login-side">
+        <form className="login-card form" onSubmit={submit}>
+          <h2>Welcome Back</h2>
+          <p className="login-lead">Sign in to access your account</p>
+          <div className="fields one">
+            <label><span className="sr-only">Email</span>
+              <span className="field-wrap"><Icon name="user" /><input type="email" placeholder="Email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus /></span>
+            </label>
+            <label><span className="sr-only">Password</span>
+              <span className="pw-field field-wrap"><Icon name="lock" />
+                <input type={show ? 'text' : 'password'} placeholder="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+                <button type="button" className="pw-toggle" onClick={() => setShow((s) => !s)} aria-label={show ? 'Hide password' : 'Show password'} aria-pressed={show} title={show ? 'Hide password' : 'Show password'}>
+                  <Icon name={show ? 'eyeOff' : 'eye'} />
+                </button>
+              </span>
+            </label>
+          </div>
+          <div className="form-foot"><button className="btn" type="submit" disabled={busy}><Icon name="login" />{busy ? 'Logging in' : 'Log in'}</button><Msg msg={msg} /></div>
+          <div className="login-foot"><b>Everest Textile Mills</b><span>People <i>|</i> Process <i>|</i> Performance</span></div>
+        </form>
+      </div>
     </div>
   );
 }

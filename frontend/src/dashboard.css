@@ -1,7 +1,7 @@
 /* Dashboard, logo and chart styles. Colours come from the variables in styles.css only. */
-.logo-back { fill: var(--side-active); } .logo-snow { fill: #fff; } .logo-line { stroke: var(--side-muted); stroke-width: 2; stroke-linecap: round; }
-.brand.dark .logo-snow { fill: var(--indigo-100); }
-.roll { stroke: none; } .roll-a { fill: var(--side-active); } .roll-b { fill: var(--c-new); opacity: .85; } .roll-c { fill: var(--c-late); opacity: .8; } .roll-core { fill: var(--side-2); opacity: .55; }
+.logo-back { fill: #12284b; stroke: #c9a45c; stroke-width: 1.4; } .logo-snow { fill: none; stroke: #fff; stroke-width: 2; stroke-linejoin: round; } .logo-line { fill: none; stroke: #c9a45c; stroke-width: 1.6; stroke-linecap: round; } .logo-gold { fill: none; stroke: #c9a45c; stroke-width: 1.6; stroke-linecap: round; opacity: .85; }
+.logo-tint { fill: none; }
+.roll { stroke: none; } .roll-a { fill: #3b6db5; } .roll-b { fill: #c9a45c; opacity: .8; } .roll-c { fill: #8a9bbd; opacity: .75; } .roll-core { fill: var(--side-2); opacity: .55; }
 
 .dash-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
 .dash-head h1 { font-size: 1.7rem; color: var(--indigo-900); } .dash-head p { margin: .2rem 0 0; color: var(--muted); }

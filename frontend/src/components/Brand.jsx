@@ -1,10 +1,11 @@
-// Logo (mountain = Everest) and the folded-fabric picture at the foot of the sidebar. Pure SVG, no image files.
+// Logo (peak woven from thread lines = Everest + textile) and the folded-fabric picture at the foot of the sidebar. Pure SVG, no image files.
 export function Logo() {
   return (
     <svg className="logo" viewBox="0 0 48 48" aria-hidden="true">
-      <path d="M2 40 18 14l7 11 5-8 16 23z" className="logo-back" />
-      <path d="M18 14l-6 10 4-2 3 3 3-3 3 3 3-5z" className="logo-snow" />
-      <path d="M2 40h44" className="logo-line" />
+      <rect x="2" y="2" width="44" height="44" rx="11" className="logo-back" />
+      <path d="M10 33 24 11l14 22z" className="logo-snow" />
+      <path d="M15.5 28.5h17M19 23.5h10M22 18.5h4" className="logo-line" />
+      <path d="M8 38.5c4-2.6 8 2.6 12 0s8 2.6 12 0 6-1.3 8-.6" className="logo-gold" />
     </svg>
   );
 }
