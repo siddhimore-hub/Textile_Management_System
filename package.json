@@ -1,0 +1,14 @@
+{
+  "name": "textile-mills",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "setup": "npm --prefix backend install && npm --prefix frontend install",
+    "db:reset": "npm --prefix backend run db:reset",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "smoke": "bash scripts/smoke.sh",
+    "test": "npm --prefix backend test && npm --prefix frontend test",
+    "build": "npm --prefix frontend run build"
+  }
+}
